@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, TouchableWithoutFeedback, Keyboard, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from './firebaseConfig/config';
+// import { signInWithEmailAndPassword } from 'firebase/auth';
+// import { auth } from './firebaseConfig/config';
+import { useAuth } from './authContext/authContext';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { login } = useAuth(); // Importamos login del contexto
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,21 +21,23 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      // El AuthContext detectará el cambio y navegará automáticamente a /(tabs)
+      // await signInWithEmailAndPassword(auth, email, password);
+      
+      // SIMULACIÓN: Login exitoso sin Firebase
+      console.log("Simulando login para:", email);
+      login({ uid: 'mock-user-123', email });
+      router.replace('/(tabs)'); 
+      
     } catch (error) {
       console.error("Error signing in", error);
       let errorMessage = "No se pudo iniciar sesión.";
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-        errorMessage = "Correo o contraseña incorrectos.";
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = "El formato del correo es inválido.";
-      }
+      // ... (errores comentados o manejados de otra forma)
       Alert.alert("Error de Inicio de Sesión", errorMessage);
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <KeyboardAvoidingView

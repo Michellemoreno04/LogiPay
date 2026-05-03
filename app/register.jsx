@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, TouchableWithoutFeedback, Keyboard, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from './firebaseConfig/config';
+// import { createUserWithEmailAndPassword } from 'firebase/auth';
+// import { doc, setDoc } from 'firebase/firestore';
+// import { auth, db } from './firebaseConfig/config';
+import { useAuth } from './authContext/authContext';
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const { login } = useAuth(); // Importamos login del contexto
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -33,6 +35,10 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
+      // SIMULACIÓN: Registro exitoso sin Firebase
+      console.log("Simulando registro para:", email);
+      
+      /* 
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
@@ -44,23 +50,21 @@ export default function RegisterScreen() {
         createdAt: new Date(),
         uid: user.uid
       });
+      */
 
-      // AuthContext detectará que el usuario inició sesión al crearlo y nos mandará a (tabs)
+      login({ uid: 'mock-user-123', email, firstName, lastName });
+      router.replace('/(tabs)'); 
+
     } catch (error) {
       console.error("Error signing up", error);
       let errorMessage = "No se pudo crear la cuenta.";
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = "El correo ya está en uso por otra cuenta.";
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = "El formato del correo es inválido.";
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = "La contraseña es muy débil.";
-      }
+      // ... (errores comentados)
       Alert.alert("Error de Registro", errorMessage);
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <KeyboardAvoidingView

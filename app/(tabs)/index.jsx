@@ -6,7 +6,7 @@ export default function HomeScreen() {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.welcome}>¡Holaa de nuevo!</Text>
+        <Text style={styles.welcome}>¡Holaaa de nuevo!</Text>
         <Text style={styles.subtitle}>Aquí tienes un resumen de hoy.</Text>
       </View>
 

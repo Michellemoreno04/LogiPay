@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from '../firebaseConfig/config';
+// import { onAuthStateChanged, signOut } from 'firebase/auth';
+// import { auth } from '../firebaseConfig/config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AuthContext = createContext({});
@@ -10,8 +10,9 @@ export const useAuth = () => {
 };
 
 export default function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // SIMULACIÓN: Usuario mock para probar sin Firebase
+  const [user, setUser] = useState({ uid: 'mock-user-123', email: 'test@example.com' });
+  const [loading, setLoading] = useState(false);
   const [businessType, setBusinessType] = useState(null);
 
   useEffect(() => {
@@ -28,17 +29,25 @@ export default function AuthProvider({ children }) {
     };
     loadBusinessType();
 
+    /* 
+    COMENTADO PARA PRUEBAS SIN FIREBASE
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
     });
 
     return unsubscribe;
+    */
   }, []);
+
+  const login = (userData) => {
+    setUser(userData || { uid: 'mock-user-123', email: 'test@example.com' });
+  };
 
   const logout = async () => {
     try {
-      await signOut(auth);
+      // await signOut(auth);
+      setUser(null); // Simulación de logout
     } catch (error) {
       console.error("Error signing out:", error);
     }
@@ -54,8 +63,9 @@ export default function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, businessType, saveBusinessType, logout }}>
+    <AuthContext.Provider value={{ user, loading, businessType, saveBusinessType, logout, login }}>
       {children}
     </AuthContext.Provider>
   );
 };
+
