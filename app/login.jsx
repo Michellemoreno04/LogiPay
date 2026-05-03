@@ -16,12 +16,12 @@ export default function LoginScreen() {
       Alert.alert("Error", "Por favor ingresa tu correo y contraseña.");
       return;
     }
-    
+
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
       // El AuthContext detectará el cambio y navegará automáticamente a /(tabs)
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error signing in", error);
       let errorMessage = "No se pudo iniciar sesión.";
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
@@ -36,7 +36,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
@@ -56,26 +56,28 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Correo electrónico"
+                placeholderTextColor="#8E8E93"
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 keyboardType="email-address"
               />
             </View>
-            
+
             <View style={styles.inputContainer}>
               <Ionicons name="lock-closed-outline" size={20} color="#8E8E93" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Contraseña"
+                placeholderTextColor="#8E8E93"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
               />
             </View>
 
-            <TouchableOpacity 
-              style={styles.loginButton} 
+            <TouchableOpacity
+              style={styles.loginButton}
               onPress={handleLogin}
               disabled={loading}
             >
@@ -164,6 +166,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1C1C1E',
   },
+
   loginButton: {
     backgroundColor: '#4C669F',
     height: 56,

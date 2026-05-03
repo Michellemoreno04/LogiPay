@@ -14,7 +14,7 @@ const MOCK_USERS = [
 export default function UsersScreen() {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredUsers = MOCK_USERS.filter(user => 
+  const filteredUsers = MOCK_USERS.filter(user =>
     user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     user.phone.includes(searchQuery)
   );
@@ -43,7 +43,7 @@ export default function UsersScreen() {
     </View>
   );
 
-  const renderItem = ({ item }: { item: any }) => (
+  const renderItem = ({ item }) => (
     <Link href={`/user/${item.id}`} asChild>
       <TouchableOpacity style={styles.userCard}>
         <View style={styles.userInfo}>
@@ -75,7 +75,7 @@ export default function UsersScreen() {
         ListHeaderComponent={() => (
           <View>
             {renderHeader()}
-            
+
             <View style={styles.searchContainer}>
               <Ionicons name="search" size={20} color="#8E8E93" style={styles.searchIcon} />
               <TextInput

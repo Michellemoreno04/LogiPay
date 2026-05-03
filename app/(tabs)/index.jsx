@@ -6,10 +6,10 @@ export default function HomeScreen() {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.welcome}>¡Hola de nuevo!</Text>
+        <Text style={styles.welcome}>¡Holaa de nuevo!</Text>
         <Text style={styles.subtitle}>Aquí tienes un resumen de hoy.</Text>
       </View>
-      
+
       <View style={styles.statsGrid}>
         <View style={styles.statCard}>
           <Ionicons name="trending-up" size={32} color="#34C759" />
@@ -74,11 +74,11 @@ const styles = StyleSheet.create({
   welcome: { fontSize: 28, fontWeight: 'bold', color: '#1C1C1E' },
   subtitle: { fontSize: 16, color: '#8E8E93', marginTop: 4 },
   statsGrid: { flexDirection: 'row', padding: 10, justifyContent: 'space-between' },
-  statCard: { 
-    flex: 1, 
-    backgroundColor: 'white', 
-    margin: 8, 
-    padding: 16, 
+  statCard: {
+    flex: 1,
+    backgroundColor: 'white',
+    margin: 8,
+    padding: 16,
     borderRadius: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -94,11 +94,11 @@ const styles = StyleSheet.create({
   actionButton: { alignItems: 'center' },
   iconCircle: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
   actionLabel: { fontSize: 14, fontWeight: '500', color: '#1C1C1E' },
-  activityItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: 'white', 
-    padding: 15, 
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 15,
     borderRadius: 12,
     marginBottom: 10
   },

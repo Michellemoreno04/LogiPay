@@ -15,6 +15,15 @@
     "expo-env.d.ts",
     "app/business-type.jsx",
     "app/_layout.jsx",
-    "app/(tabs)/profile.jsx"
+    "app/(tabs)/profile.jsx",
+    "app/register.jsx",
+    "app/user/[id].jsx",
+    "app/(tabs)/users.jsx",
+    "app/(tabs)/index.jsx",
+    "app/(tabs)/_layout.jsx",
+    "app/add-transaction.jsx",
+    "app/add-user.jsx",
+    "app/welcome.jsx",
+    "app/login.jsx"
   ]
 }

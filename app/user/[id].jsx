@@ -21,7 +21,7 @@ export default function UserDetailsScreen() {
   // In a real app, we would fetch user details based on `id`.
   const user = MOCK_USER;
 
-  const renderTransaction = ({ item }: { item: any }) => (
+  const renderTransaction = ({ item }) => (
     <View style={styles.transactionCard}>
       <View style={styles.transactionIconContainer}>
         <Ionicons
@@ -66,14 +66,14 @@ export default function UserDetailsScreen() {
         </View>
 
         <View style={styles.actionButtons}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.actionButton, styles.paymentButton]}
             onPress={() => router.push('/add-transaction')}
           >
             <Ionicons name="add-circle-outline" size={20} color="white" />
             <Text style={styles.actionButtonText}>Abonar Pago</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.actionButton, styles.debtButton]}
             onPress={() => router.push('/add-transaction')}
           >

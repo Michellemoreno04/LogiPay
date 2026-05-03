@@ -30,12 +30,12 @@ export default function RegisterScreen() {
       Alert.alert("Error", "La contraseña debe tener al menos 6 caracteres.");
       return;
     }
-    
+
     setLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
-      
+
       // Guardar información en la base de datos
       await setDoc(doc(db, "users", user.uid), {
         firstName,
@@ -46,7 +46,7 @@ export default function RegisterScreen() {
       });
 
       // AuthContext detectará que el usuario inició sesión al crearlo y nos mandará a (tabs)
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error signing up", error);
       let errorMessage = "No se pudo crear la cuenta.";
       if (error.code === 'auth/email-already-in-use') {
@@ -63,7 +63,7 @@ export default function RegisterScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
@@ -84,6 +84,7 @@ export default function RegisterScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Nombre"
+                  placeholderTextColor="#8E8E93"
                   value={firstName}
                   onChangeText={setFirstName}
                 />
@@ -93,6 +94,7 @@ export default function RegisterScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Apellido"
+                  placeholderTextColor="#8E8E93"
                   value={lastName}
                   onChangeText={setLastName}
                 />
@@ -104,18 +106,20 @@ export default function RegisterScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Correo electrónico"
+                placeholderTextColor="#8E8E93"
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 keyboardType="email-address"
               />
             </View>
-            
+
             <View style={styles.inputContainer}>
               <Ionicons name="lock-closed-outline" size={20} color="#8E8E93" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 placeholder="Contraseña"
+                placeholderTextColor="#8E8E93"
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
@@ -127,14 +131,15 @@ export default function RegisterScreen() {
               <TextInput
                 style={styles.input}
                 placeholder="Confirmar Contraseña"
+                placeholderTextColor="#8E8E93"
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 secureTextEntry
               />
             </View>
 
-            <TouchableOpacity 
-              style={styles.registerButton} 
+            <TouchableOpacity
+              style={styles.registerButton}
               onPress={handleRegister}
               disabled={loading}
             >
