@@ -1,47 +1,38 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-
-// Mock data for UI design purposes
-const MOCK_USERS = [
-  { id: '1', name: 'Juan Pérez', phone: '555-0100', balance: -50.00 }, // Owes 50
-  { id: '2', name: 'María García', phone: '555-0101', balance: 150.00 }, // Paid 150 ahead
-  { id: '3', name: 'Carlos López', phone: '555-0102', balance: 0.00 }, // Even
-  { id: '4', name: 'Ana Martínez', phone: '555-0103', balance: -1200.00 }, // Owes 1200
-];
+import { collection, query, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebaseConfig/config';
+import { useAuth } from '../authContext/authContext';
 
 export default function UsersScreen() {
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
+  const [clients, setClients] = useState([]);
 
-  const filteredUsers = MOCK_USERS.filter(user =>
-    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.phone.includes(searchQuery)
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(collection(db, 'users', user.uid, 'clients'));
+    const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      const clientsData = [];
+      querySnapshot.forEach((doc) => {
+        clientsData.push({ id: doc.id, ...doc.data() });
+      });
+      setClients(clientsData);
+    });
+
+    return () => unsubscribe();
+  }, [user]);
+
+  const filteredUsers = clients.filter(client =>
+    (client.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (client.phone || '').includes(searchQuery)
   );
 
-  // Calculate totals from mock data
-  const totalDebt = MOCK_USERS.reduce((acc, user) => user.balance < 0 ? acc + Math.abs(user.balance) : acc, 0);
-  const totalPayments = MOCK_USERS.reduce((acc, user) => user.balance > 0 ? acc + user.balance : acc, 0);
 
-  const renderHeader = () => (
-    <View style={styles.summaryContainer}>
-      <View style={[styles.summaryCard, styles.debtCard]}>
-        <View style={styles.summaryHeader}>
-          <Ionicons name="arrow-up-circle" size={24} color="#FF3B30" />
-          <Text style={styles.summaryTitle}>Por Cobrar</Text>
-        </View>
-        <Text style={[styles.summaryAmount, styles.negativeBalance]}>${totalDebt.toFixed(2)}</Text>
-      </View>
 
-      <View style={[styles.summaryCard, styles.paymentCard]}>
-        <View style={styles.summaryHeader}>
-          <Ionicons name="arrow-down-circle" size={24} color="#34C759" />
-          <Text style={styles.summaryTitle}>A Favor</Text>
-        </View>
-        <Text style={[styles.summaryAmount, styles.positiveBalance]}>${totalPayments.toFixed(2)}</Text>
-      </View>
-    </View>
-  );
 
   const renderItem = ({ item }) => (
     <Link href={`/user/${item.id}`} asChild>
@@ -54,11 +45,11 @@ export default function UsersScreen() {
           <Text style={styles.balanceLabel}>Saldo</Text>
           <Text style={[
             styles.balanceAmount,
-            item.balance < 0 ? styles.negativeBalance :
-              item.balance > 0 ? styles.positiveBalance :
+            (item.balance || 0) < 0 ? styles.negativeBalance :
+              (item.balance || 0) > 0 ? styles.positiveBalance :
                 styles.neutralBalance
           ]}>
-            ${Math.abs(item.balance).toFixed(2)}
+            ${Math.abs(item.balance || 0).toFixed(2)}
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={24} color="#C7C7CC" />
@@ -74,7 +65,7 @@ export default function UsersScreen() {
         renderItem={renderItem}
         ListHeaderComponent={() => (
           <View>
-            {renderHeader()}
+
 
             <View style={styles.searchContainer}>
               <Ionicons name="search" size={20} color="#8E8E93" style={styles.searchIcon} />

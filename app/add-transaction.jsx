@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function AddTransactionScreen() {
-  const [type, setType] = useState<'payment' | 'debt'>('payment');
+  const [type, setType] = useState('payment');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
 
@@ -15,23 +15,23 @@ export default function AddTransactionScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        
+
         {/* Type Selector */}
         <Text style={styles.label}>Tipo de Transacción</Text>
         <View style={styles.typeSelector}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.typeButton, type === 'payment' && styles.typeButtonActivePayment]}
             onPress={() => setType('payment')}
           >
             <Ionicons name="arrow-down-circle" size={24} color={type === 'payment' ? 'white' : '#34C759'} />
             <Text style={[styles.typeButtonText, type === 'payment' && styles.typeButtonTextActive]}>Pago a favor</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.typeButton, type === 'debt' && styles.typeButtonActiveDebt]}
             onPress={() => setType('debt')}
           >
@@ -66,12 +66,12 @@ export default function AddTransactionScreen() {
           />
         </View>
 
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[
-            styles.saveButton, 
+            styles.saveButton,
             (!amount || !description) && styles.saveButtonDisabled,
             type === 'payment' ? styles.paymentTheme : styles.debtTheme
-          ]} 
+          ]}
           onPress={handleSave}
           disabled={!amount || !description}
         >

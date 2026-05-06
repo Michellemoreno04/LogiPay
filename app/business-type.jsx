@@ -8,9 +8,9 @@ export default function BusinessTypeScreen() {
   const router = useRouter();
   const { saveBusinessType } = useAuth();
 
-  const handleSelectType = async (type) => {
-    await saveBusinessType(type);
-    router.push('/login');
+  const handleSelectType = (type) => {
+    saveBusinessType(type);
+    router.push('/business-name');
   };
 
   return (
@@ -45,7 +45,7 @@ export default function BusinessTypeScreen() {
         <TouchableOpacity
           style={styles.card}
           activeOpacity={0.8}
-          onPress={() => handleSelectType('business')}
+          onPress={() => handleSelectType('comercial')}
         >
           <View style={[styles.iconWrapper, { backgroundColor: '#E8F5E9' }]}>
             <Ionicons name="storefront" size={32} color="#43A047" />

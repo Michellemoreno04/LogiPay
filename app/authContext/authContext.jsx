@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-// import { onAuthStateChanged, signOut } from 'firebase/auth';
-// import { auth } from '../firebaseConfig/config';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { auth, db } from '../firebaseConfig/config';
 
 const AuthContext = createContext({});
 
@@ -10,62 +10,92 @@ export const useAuth = () => {
 };
 
 export default function AuthProvider({ children }) {
-  // SIMULACIÓN: Usuario mock para probar sin Firebase
-  const [user, setUser] = useState({ uid: 'mock-user-123', email: 'test@example.com' });
-  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [businessType, setBusinessType] = useState(null);
+  const [businessName, setBusinessName] = useState(null);
 
   useEffect(() => {
-    // Check if business type is already stored
-    const loadBusinessType = async () => {
-      try {
-        const storedType = await AsyncStorage.getItem('businessType');
-        if (storedType) {
-          setBusinessType(storedType);
-        }
-      } catch (error) {
-        console.error("Error loading business type:", error);
-      }
-    };
-    loadBusinessType();
+    let unsubscribeUserDoc = null;
 
-    /* 
-    COMENTADO PARA PRUEBAS SIN FIREBASE
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      setLoading(false);
+
+      // Clean up previous user document listener
+      if (unsubscribeUserDoc) {
+        unsubscribeUserDoc();
+        unsubscribeUserDoc = null;
+      }
+
+      if (currentUser) {
+        // Real-time listener on user document so totalPayment/totalDebt stay in sync
+        const userRef = doc(db, "users", currentUser.uid);
+        unsubscribeUserDoc = onSnapshot(userRef, (snap) => {
+          if (snap.exists()) {
+            setUserData(snap.data());
+          } else {
+            setUserData(null);
+          }
+          setLoading(false);
+        }, (error) => {
+          console.error("Error listening to user data:", error);
+          setLoading(false);
+        });
+      } else {
+        setUserData(null);
+        setLoading(false);
+      }
     });
 
-    return unsubscribe;
-    */
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeUserDoc) unsubscribeUserDoc();
+    };
   }, []);
-
-  const login = (userData) => {
-    setUser(userData || { uid: 'mock-user-123', email: 'test@example.com' });
-  };
 
   const logout = async () => {
     try {
-      // await signOut(auth);
-      setUser(null); // Simulación de logout
+      await signOut(auth);
     } catch (error) {
       console.error("Error signing out:", error);
     }
   };
 
-  const saveBusinessType = async (type) => {
+  const saveBusinessType = (type) => {
+    setBusinessType(type);
+  };
+
+  const saveBusinessName = (name) => {
+    setBusinessName(name);
+  };
+
+  const updateUserData = async (newData) => {
+    if (!user) return;
     try {
-      await AsyncStorage.setItem('businessType', type);
-      setBusinessType(type);
+      const userRef = doc(db, "users", user.uid);
+      await setDoc(userRef, newData, { merge: true });
+      // Actualizamos el estado local para reflejar los cambios de inmediato
+      setUserData((prev) => ({ ...prev, ...newData }));
     } catch (error) {
-      console.error("Error saving business type:", error);
+      console.error("Error updating user data:", error);
+      throw error;
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, businessType, saveBusinessType, logout, login }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      userData, 
+      loading, 
+      businessType, 
+      businessName, 
+      saveBusinessType, 
+      saveBusinessName, 
+      updateUserData,
+      logout 
+    }}>
       {children}
     </AuthContext.Provider>
   );
 };
-

@@ -11,7 +11,7 @@ function RootLayoutNav() {
   useEffect(() => {
     if (loading) return;
 
-    const inAuthGroup = segments[0] === 'welcome' || segments[0] === 'login' || segments[0] === 'register' || segments[0] === 'business-type';
+    const inAuthGroup = segments[0] === 'welcome' || segments[0] === 'login' || segments[0] === 'register' || segments[0] === 'business-type' || segments[0] === 'business-name';
 
     if (!user && !inAuthGroup) {
       // Redirect to welcome screen if not logged in
@@ -44,10 +44,11 @@ function RootLayoutNav() {
     >
       <Stack.Screen name="welcome" options={{ headerShown: false }} />
       <Stack.Screen name="business-type" options={{ headerShown: false }} />
+      <Stack.Screen name="business-name" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
       <Stack.Screen name="register" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="user/[id]" options={{ title: "Detalles del Cliente" }} />
+      <Stack.Screen name="user/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="add-user" options={{ title: "Nuevo Cliente", presentation: 'modal' }} />
       <Stack.Screen name="add-transaction" options={{ title: "Nueva Transacción", presentation: 'modal' }} />
     </Stack>

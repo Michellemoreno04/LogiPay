@@ -2,18 +2,33 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../authContext/authContext';
+import { useEffect, useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebaseConfig/config';
 
 export default function ProfileScreen() {
 
   const router = useRouter();
   const { user, logout } = useAuth();
+  const [userData, setUserData] = useState(null);
 
+  useEffect(() => {
+    if (!user) return;
 
+    const fetchUserData = async () => {
+      try {
+        const userRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          setUserData(userSnap.data());
+        }
+      } catch (error) {
+        console.error("Error fetching user data in profile:", error);
+      }
+    };
 
-
-
-
-
+    fetchUserData();
+  }, [user]);
 
   return (
     <ScrollView style={styles.container}>
@@ -21,8 +36,10 @@ export default function ProfileScreen() {
         <View style={styles.avatarContainer}>
           <Ionicons name="person-circle" size={100} color="#4C669F" />
         </View>
-        <Text style={styles.userName}>Administrador</Text>
-        <Text style={styles.userEmail}>admin@logipay.com</Text>
+        <Text style={styles.userName}>
+          {userData ? `${userData.firstName} ${userData.lastName}` : 'Cargando...'}
+        </Text>
+        <Text style={styles.userEmail}>{user?.email || 'email@ejemplo.com'}</Text>
       </View>
 
       <View style={styles.menu}>
