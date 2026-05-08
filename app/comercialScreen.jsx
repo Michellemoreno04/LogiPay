@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 
-const ComercialScreen = ({ userData }) => {
+const ComercialScreen = ({ userData, onAdjust }) => {
     const totalDebt = userData?.totalDebt || 0;
     const totalPayment = userData?.totalPayment || 0;
     const totalPorCobrar = totalDebt - totalPayment;
@@ -14,7 +14,13 @@ const ComercialScreen = ({ userData }) => {
 
     return (
         <View style={styles.statCard}>
-            <Ionicons name="trending-up" size={32} color="#e91212ff" />
+            <View style={styles.cardHeader}>
+                <Ionicons name="trending-up" size={32} color="#e91212ff" />
+                <TouchableOpacity onPress={onAdjust} style={styles.adjustBtn}>
+                    <Ionicons name="options-outline" size={16} color="#e91212ff" />
+                    <Text style={styles.adjustText}>Ajustar</Text>
+                </TouchableOpacity>
+            </View>
             <Text style={styles.statValue}>${formatted}</Text>
             <Text style={styles.statLabel}>Monto total por cobrar</Text>
         </View>
@@ -35,7 +41,26 @@ const styles = StyleSheet.create({
         elevation: 3,
     },
     statValue: { fontSize: 20, fontWeight: 'bold', color: '#1C1C1E', marginTop: 8 },
-    statLabel: { fontSize: 12, color: '#8E8E93', marginTop: 2 }
+    statLabel: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
+    cardHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    adjustBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFF0F0', // un fondo rojizo claro que combine
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 16,
+    },
+    adjustText: {
+        color: '#e91212ff',
+        fontSize: 13,
+        fontWeight: '600',
+        marginLeft: 4,
+    }
 });
 
 export default ComercialScreen;

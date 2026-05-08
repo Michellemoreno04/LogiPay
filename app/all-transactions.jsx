@@ -1,0 +1,292 @@
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { useAuth } from '../authContext/authContext';
+import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
+import { db } from '../firebaseConfig/config';
+import { useEffect, useState } from 'react';
+import { FlashList } from '@shopify/flash-list';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+// ─── Helper: relative time in Spanish ───
+function timeAgo(date) {
+  if (!date) return '';
+  const now = new Date();
+  const diffMs = now - date;
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHr = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHr / 24);
+
+  if (diffSec < 60) return 'Hace un momento';
+  if (diffMin < 60) return `Hace ${diffMin} min`;
+  if (diffHr < 24) return `Hace ${diffHr} hora${diffHr > 1 ? 's' : ''}`;
+  if (diffDays < 7) return `Hace ${diffDays} día${diffDays > 1 ? 's' : ''}`;
+  return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+}
+
+export default function AllTransactionsScreen() {
+  const { user } = useAuth();
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [clients, setClients] = useState([]);
+
+  // 1. Fetch all clients first
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'users', user.uid, 'clients'));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const data = [];
+      snap.forEach((doc) => data.push({ id: doc.id, ...doc.data() }));
+      setClients(data);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // 2. Listen to all transactions for all clients + global
+  useEffect(() => {
+    if (!user) return;
+    if (clients.length === 0) {
+      // Still might have global transactions
+    }
+
+    const unsubscribes = [];
+    const txByClient = {};
+
+    const updateMerged = () => {
+      const merged = Object.values(txByClient).flat();
+      merged.sort((a, b) => b._timestamp - a._timestamp);
+      setTransactions(merged);
+      setLoading(false);
+    };
+
+    // Listen to each client's transactions
+    clients.forEach((client) => {
+      const txQ = query(
+        collection(db, 'users', user.uid, 'clients', client.id, 'transactions'),
+        orderBy('createdAt', 'desc')
+      );
+
+      const unsub = onSnapshot(txQ, (snap) => {
+        const txs = [];
+        snap.forEach((doc) => {
+          const data = doc.data();
+          txs.push({
+            id: doc.id,
+            ...data,
+            clientName: client.name || 'Sin nombre',
+            clientId: client.id,
+            _timestamp: data.createdAt?.toMillis?.() || 0,
+            _date: data.createdAt?.toDate?.() || null,
+          });
+        });
+        txByClient[client.id] = txs;
+        updateMerged();
+      }, (error) => {
+        console.error('Error fetching transactions for client', client.id, error);
+      });
+      unsubscribes.push(unsub);
+    });
+
+    // Listen to global transactions (adjustments)
+    const globalTxQ = query(
+      collection(db, 'users', user.uid, 'transactions'),
+      orderBy('createdAt', 'desc')
+    );
+    const globalUnsub = onSnapshot(globalTxQ, (snap) => {
+      const txs = [];
+      snap.forEach((docSnap) => {
+        const data = docSnap.data();
+        txs.push({
+          id: docSnap.id,
+          ...data,
+          clientName: 'Ajuste de Total',
+          clientId: 'global',
+          _timestamp: data.createdAt?.toMillis?.() || 0,
+          _date: data.createdAt?.toDate?.() || null,
+        });
+      });
+      txByClient['global'] = txs;
+      updateMerged();
+    }, (error) => {
+      console.error('Error fetching global transactions', error);
+    });
+    unsubscribes.push(globalUnsub);
+
+    return () => unsubscribes.forEach((fn) => fn());
+  }, [user, clients]);
+
+  const renderItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.activityItem}
+      activeOpacity={0.7}
+      onPress={() => item.clientId !== 'global' && router.push(`/${item.clientId}`)}
+    >
+      <View style={[
+        styles.activityIconBg,
+        { backgroundColor: item.type === 'payment' ? '#E8F9EE' : '#FDECEA' }
+      ]}>
+        <Ionicons
+          name={item.type === 'payment' ? 'add-circle' : 'remove-circle'}
+          size={24}
+          color={item.type === 'payment' ? '#34C759' : '#FF3B30'}
+        />
+      </View>
+      <View style={styles.activityInfo}>
+        <Text style={styles.activityText} numberOfLines={1}>
+          {item.clientName}
+        </Text>
+        <Text style={styles.activityDescription} numberOfLines={1}>
+          {item.description}
+        </Text>
+        <Text style={styles.activityTime}>{timeAgo(item._date)}</Text>
+      </View>
+      <Text style={[
+        styles.activityAmount,
+        { color: item.type === 'payment' ? '#34C759' : '#FF3B30' }
+      ]}>
+        {item.type === 'payment' ? '+' : '-'}${item.amount?.toFixed(2) || '0.00'}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Ionicons name="arrow-back" size={24} color="#1C1C1E" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Todos los movimientos</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4C669F" />
+          <Text style={styles.loadingText}>Cargando transacciones...</Text>
+        </View>
+      ) : transactions.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="receipt-outline" size={80} color="#C7C7CC" />
+          <Text style={styles.emptyText}>No hay movimientos aún</Text>
+          <Text style={styles.emptySubText}>Tus transacciones aparecerán aquí</Text>
+        </View>
+      ) : (
+        <View style={{ flex: 1, paddingHorizontal: 20 }}>
+          <FlashList
+            data={transactions}
+            renderItem={renderItem}
+            estimatedItemSize={90}
+            contentContainerStyle={{ paddingBottom: 20, paddingTop: 10 }}
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F2F2F7',
+    paddingTop: Platform.OS === 'android' ? 40 : 0,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: '#F2F2F7',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1C1C1E',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#8E8E93',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  emptyText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1C1C1E',
+    marginTop: 20,
+  },
+  emptySubText: {
+    fontSize: 16,
+    color: '#8E8E93',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  activityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  activityIconBg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityInfo: {
+    flex: 1,
+    marginLeft: 15,
+  },
+  activityText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1C1C1E',
+  },
+  activityDescription: {
+    fontSize: 14,
+    color: '#636366',
+    marginTop: 2,
+  },
+  activityTime: {
+    fontSize: 12,
+    color: '#8E8E93',
+    marginTop: 4,
+  },
+  activityAmount: {
+    fontSize: 17,
+    fontWeight: 'bold',
+  },
+});

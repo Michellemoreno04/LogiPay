@@ -17,7 +17,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Inicio',
+          headerShown: false,
           tabBarLabel: 'Home',
           tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
         }}
@@ -25,8 +25,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="users"
         options={{
-          title: 'Mis Usuarios',
-          tabBarLabel: 'Usuarios',
+          headerShown: false,
+          tabBarLabel: 'Clientes',
           tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
         }}
       />

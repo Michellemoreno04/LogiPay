@@ -3,8 +3,12 @@ import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'r
 import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { collection, query, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebaseConfig/config';
-import { useAuth } from '../authContext/authContext';
+import { db } from '../../firebaseConfig/config';
+import { useAuth } from '../../authContext/authContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+
+
 
 export default function UsersScreen() {
   const { user } = useAuth();
@@ -35,7 +39,7 @@ export default function UsersScreen() {
 
 
   const renderItem = ({ item }) => (
-    <Link href={`/user/${item.id}`} asChild>
+    <Link href={`/${item.id}`} asChild>
       <TouchableOpacity style={styles.userCard}>
         <View style={styles.userInfo}>
           <Text style={styles.userName}>{item.name}</Text>
@@ -59,37 +63,38 @@ export default function UsersScreen() {
 
   return (
     <View style={styles.container}>
-      <FlatList
-        data={filteredUsers}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        ListHeaderComponent={() => (
-          <View>
+      <SafeAreaView>
+        <FlatList
+          data={filteredUsers}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          ListHeaderComponent={
+            <View>
+              <View style={styles.searchContainer}>
+                <Ionicons name="search" size={20} color="#8E8E93" style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar clientes..."
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  clearButtonMode="while-editing"
 
+                  placeholderTextColor="#8E8E93"
+                />
+              </View>
 
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#8E8E93" style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Buscar clientes..."
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                clearButtonMode="while-editing"
-                placeholderTextColor="#8E8E93"
-              />
+              <Text style={styles.label}>Historial de pagos y deudas</Text>
             </View>
-
-            <Text style={styles.label}>Historial de pagos y deudas</Text>
-          </View>
-        )}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Ionicons name="people-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyStateText}>No se encontraron clientes.</Text>
-          </View>
-        }
-      />
+          }
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="people-outline" size={64} color="#ccc" />
+              <Text style={styles.emptyStateText}>No se encontraron clientes.</Text>
+            </View>
+          }
+        />
+      </SafeAreaView>
 
       <Link href="/add-user" asChild>
         <TouchableOpacity style={styles.fab}>

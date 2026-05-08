@@ -2,18 +2,37 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from './authContext/authContext';
+import { useAuth } from '../authContext/authContext';
 
 export default function BusinessNameScreen() {
   const router = useRouter();
-  const { saveBusinessName } = useAuth();
+  const { user, businessType, saveBusinessName, updateUserData } = useAuth();
   const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleContinue = () => {
-    if (name.trim()) {
-      saveBusinessName(name.trim());
+  const handleContinue = async () => {
+    if (!name.trim()) return;
+
+    setLoading(true);
+    try {
+      if (user) {
+        // Si el usuario ya está logueado (por ejemplo, después de login social o retorno)
+        // Guardamos la configuración en su perfil de Firestore
+        await updateUserData({
+          businessName: name.trim(),
+          businessType: businessType
+        });
+        // La redirección a /(tabs) ocurrirá automáticamente en app/_layout.jsx
+      } else {
+        // Flujo normal para usuarios no registrados aún
+        saveBusinessName(name.trim());
+        router.push('/login');
+      }
+    } catch (error) {
+      console.error("Error saving business details:", error);
+    } finally {
+      setLoading(false);
     }
-    router.push('/login');
   };
 
   return (

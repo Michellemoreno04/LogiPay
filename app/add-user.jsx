@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
-import { collection, addDoc, doc, updateDoc, increment } from 'firebase/firestore';
-import { db } from './firebaseConfig/config';
-import { useAuth } from './authContext/authContext';
+import { collection, addDoc, doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebaseConfig/config';
+import { useAuth } from '../authContext/authContext';
 
 export default function AddUserScreen() {
   const { user } = useAuth();
@@ -23,20 +23,32 @@ export default function AddUserScreen() {
     try {
       const parsedBalance = parseFloat(initialBalance.replace(/,/g, '')) || 0;
       const clientsRef = collection(db, 'users', user.uid, 'clients');
-      await addDoc(clientsRef, {
+
+      // 1. Create the client document
+      const docRef = await addDoc(clientsRef, {
         name,
         phone,
         email,
         notes,
         balance: -parsedBalance,
-        createdAt: new Date(),
+        createdAt: serverTimestamp(),
       });
 
-      // Update the user's totalDebt with the initial balance
+      // 2. If there's an initial balance, record it and update totals
       if (parsedBalance > 0) {
+        // Update the user's totalDebt with the initial balance
         const userRef = doc(db, 'users', user.uid);
         await updateDoc(userRef, {
           totalDebt: increment(parsedBalance),
+        });
+
+        // Add the initial transaction to the client's history
+        const txRef = collection(db, 'users', user.uid, 'clients', docRef.id, 'transactions');
+        await addDoc(txRef, {
+          type: 'debt',
+          amount: parsedBalance,
+          description: 'Saldo inicial',
+          createdAt: serverTimestamp(),
         });
       }
 

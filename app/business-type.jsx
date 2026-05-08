@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from './authContext/authContext';
+import { useAuth } from '../authContext/authContext';
 
 export default function BusinessTypeScreen() {
   const router = useRouter();

@@ -17,7 +17,7 @@
     "app/_layout.jsx",
     "app/(tabs)/profile.jsx",
     "app/register.jsx",
-    "app/user/[id].jsx",
+    "user/[id].jsx",
     "app/(tabs)/users.jsx",
     "app/(tabs)/index.jsx",
     "app/(tabs)/_layout.jsx",

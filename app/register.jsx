@@ -4,8 +4,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
-import { auth, db } from './firebaseConfig/config';
-import { useAuth } from './authContext/authContext';
+import { auth, db } from '../firebaseConfig/config';
+import { useAuth } from '../authContext/authContext';
 
 export default function RegisterScreen() {
   const router = useRouter();

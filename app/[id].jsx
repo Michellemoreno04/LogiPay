@@ -8,7 +8,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import {
   doc, onSnapshot, collection, addDoc, updateDoc, increment,
-  query, orderBy, serverTimestamp, deleteDoc, getDocs, writeBatch
+  query, orderBy, serverTimestamp, getDocs, writeBatch
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig/config';
 import { useAuth } from '../authContext/authContext';
@@ -68,8 +68,8 @@ export default function UserDetailsScreen() {
           // Convert Firestore timestamp to readable date string
           date: data.createdAt
             ? data.createdAt.toDate().toLocaleDateString('es-ES', {
-                year: 'numeric', month: 'short', day: 'numeric'
-              })
+              year: 'numeric', month: 'short', day: 'numeric'
+            })
             : 'Pendiente...',
         });
       });
@@ -151,9 +151,9 @@ export default function UserDetailsScreen() {
       "¿Estás seguro de que deseas eliminar a este cliente? Esta acción no se puede deshacer y se borrarán todas sus transacciones.",
       [
         { text: "Cancelar", style: "cancel" },
-        { 
-          text: "Eliminar", 
-          style: "destructive", 
+        {
+          text: "Eliminar",
+          style: "destructive",
           onPress: async () => {
             setDeleting(true);
             setOptionsVisible(false);
@@ -440,13 +440,13 @@ export default function UserDetailsScreen() {
         transparent={true}
         onRequestClose={() => setOptionsVisible(false)}
       >
-        <TouchableOpacity 
-          style={styles.optionsOverlay} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={styles.optionsOverlay}
+          activeOpacity={1}
           onPress={() => setOptionsVisible(false)}
         >
           <View style={styles.optionsContent}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.optionItem}
               onPress={() => {
                 setOptionsVisible(false);
@@ -457,10 +457,10 @@ export default function UserDetailsScreen() {
               <Ionicons name="create-outline" size={22} color="#4C669F" />
               <Text style={styles.optionText}>Editar cliente</Text>
             </TouchableOpacity>
-            
+
             <View style={styles.optionDivider} />
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.optionItem}
               onPress={handleDeleteClient}
             >

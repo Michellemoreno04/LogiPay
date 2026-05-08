@@ -84,16 +84,16 @@ export default function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      userData, 
-      loading, 
-      businessType, 
-      businessName, 
-      saveBusinessType, 
-      saveBusinessName, 
+    <AuthContext.Provider value={{
+      user,
+      userData,
+      loading,
+      businessType,
+      businessName,
+      saveBusinessType,
+      saveBusinessName,
       updateUserData,
-      logout 
+      logout
     }}>
       {children}
     </AuthContext.Provider>

@@ -1,16 +1,21 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useAuth } from '../authContext/authContext';
+import { useAuth } from '../../authContext/authContext';
 import { useEffect, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../firebaseConfig/config';
+import { db } from '../../firebaseConfig/config';
+
 
 export default function ProfileScreen() {
 
   const router = useRouter();
   const { user, logout } = useAuth();
   const [userData, setUserData] = useState(null);
+
+  const handleDeleteAccount = () => {
+    router.push('/delete-account');
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -29,6 +34,18 @@ export default function ProfileScreen() {
 
     fetchUserData();
   }, [user]);
+
+  const gotToTerms = () => {
+    const url = "https://docs.google.com/document/d/17LlGB0Y6MSfKoRVlKr0SbYyaG8UG8YdVAFO_VNn4Kbo/edit?usp=sharing"
+    Linking.openURL(url);
+  };
+
+  const gotPrivacy = () => {
+    const url = "https://docs.google.com/document/d/1uqLAvQK6iBXlmJZUoyk3dD4iw7dW5Qjbdy53UXhnPmE/edit?usp=sharing"
+    Linking.openURL(url);
+  };
+
+
 
   return (
     <ScrollView style={styles.container}>
@@ -61,11 +78,18 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         <Text style={styles.menuTitle}>Información</Text>
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity style={styles.menuItem} onPress={gotPrivacy}>
           <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
             <Ionicons name="shield-checkmark-outline" size={20} color="#1C1C1E" />
           </View>
           <Text style={styles.menuText}>Privacidad y Seguridad</Text>
+          <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.menuItem} onPress={gotToTerms}>
+          <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
+            <Ionicons name="information-circle-outline" size={20} color="#1C1C1E" />
+          </View>
+          <Text style={styles.menuText}>Terminos y condiciones</Text>
           <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
         </TouchableOpacity>
 
@@ -77,14 +101,26 @@ export default function ProfileScreen() {
           <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.menuItem, { marginTop: 30, borderBottomWidth: 0 }]}
+        <Text style={styles.menuTitle}>Cuenta</Text>
+
+        <TouchableOpacity style={[styles.menuItem, { marginTop: 0, borderBottomWidth: 0 }]}
+          onPress={handleDeleteAccount}
+        >
+          <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
+            <Ionicons name="trash-outline" size={20} color="#1C1C1E" />
+          </View>
+          <Text style={styles.menuText}>Eliminar cuenta</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]}
           onPress={logout}
         >
-          <View style={[styles.iconBox, { backgroundColor: '#FF3B301A' }]}>
-            <Ionicons name="log-out-outline" size={20} color="#FF3B30" />
+          <View style={[styles.iconBox, { backgroundColor: '#FF95001A' }]}>
+            <Ionicons name="log-out-outline" size={20} color="#FF9500" />
           </View>
-          <Text style={[styles.menuText, { color: '#FF3B30' }]}>Cerrar Sesión</Text>
+          <Text style={[styles.menuText, { color: '#FF9500' }]}>Cerrar Sesión</Text>
         </TouchableOpacity>
+
       </View>
 
       <Text style={styles.version}>LogiPay v1.0.0</Text>
@@ -99,7 +135,7 @@ const styles = StyleSheet.create({
   userName: { fontSize: 24, fontWeight: 'bold', color: '#1C1C1E' },
   userEmail: { fontSize: 16, color: '#8E8E93', marginTop: 4 },
   menu: { marginTop: 20 },
-  menuTitle: { fontSize: 13, fontWeight: '600', color: '#8E8E93', marginLeft: 16, marginBottom: 8, textTransform: 'uppercase' },
+  menuTitle: { fontSize: 13, fontWeight: '600', color: '#8E8E93', marginLeft: 16, marginVertical: 8, textTransform: 'uppercase' },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
