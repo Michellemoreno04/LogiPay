@@ -33,7 +33,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Mi Perfil',
+          headerShown: false,
           tabBarLabel: 'Perfil',
           tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
         }}

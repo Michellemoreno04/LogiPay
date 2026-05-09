@@ -12,7 +12,6 @@ export default function AddUserScreen() {
   const [phone, setPhone] = useState('');
   const [initialBalance, setInitialBalance] = useState('');
   const [email, setEmail] = useState('');
-  const [notes, setNotes] = useState('');
 
   const handleSave = async () => {
     if (!user) {
@@ -29,7 +28,6 @@ export default function AddUserScreen() {
         name,
         phone,
         email,
-        notes,
         balance: -parsedBalance,
         createdAt: serverTimestamp(),
       });
@@ -125,19 +123,6 @@ export default function AddUserScreen() {
             onChangeText={setEmail}
             keyboardType="email-address"
             autoCapitalize="none"
-          />
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Notas Adicionales</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Detalles sobre el cliente..."
-            placeholderTextColor="#8E8E93"
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-            numberOfLines={4}
           />
         </View>
 

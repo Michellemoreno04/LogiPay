@@ -127,7 +127,7 @@ export default function WelcomeScreen() {
 
   const handleContinue = useCallback(() => {
     closeBenefits();
-    setTimeout(() => router.push('/login'), 350);
+    setTimeout(() => router.push('/loginScreen'), 350);
   }, []);
 
   // Animated styles
@@ -172,7 +172,7 @@ export default function WelcomeScreen() {
         <TouchableOpacity
           style={styles.buttonLogin}
           activeOpacity={0.8}
-          onPress={() => router.push('/login')}
+          onPress={() => router.push('/loginScreen')}
         >
           <Text style={styles.buttonTextLogin}>Ya tengo una cuenta</Text>
         </TouchableOpacity>

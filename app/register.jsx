@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, TouchableWithoutFeedback, Keyboard, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform, ActivityIndicator, TouchableWithoutFeedback, Keyboard, ScrollView, Linking } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
@@ -18,6 +18,11 @@ export default function RegisterScreen() {
   const [loading, setLoading] = useState(false);
   const [totalPayment, setTotalPayment] = useState(0);
   const [totalDebt, setTotalDebt] = useState(0);
+
+  const gotToTerms = () => {
+    const url = "https://docs.google.com/document/d/17LlGB0Y6MSfKoRVlKr0SbYyaG8UG8YdVAFO_VNn4Kbo/edit?usp=sharing"
+    Linking.openURL(url);
+  };
 
   const handleRegister = async () => {
     if (!firstName || !lastName || !email || !password || !confirmPassword) {
@@ -169,7 +174,10 @@ export default function RegisterScreen() {
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>
-              Al registrarte aceptas nuestros Términos y Condiciones.
+              Al registrarte aceptas nuestros{' '}
+            </Text>
+            <Text style={styles.linkText} onPress={gotToTerms}>
+              Términos y Condiciones
             </Text>
           </View>
         </ScrollView>
@@ -285,5 +293,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#8E8E93',
     textAlign: 'center',
+  },
+  linkText: {
+    color: '#4C669F',
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   }
 });

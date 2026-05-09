@@ -2,38 +2,21 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking } from 'r
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../authContext/authContext';
-import { useEffect, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../firebaseConfig/config';
+import { useState } from 'react';
 
 
 export default function ProfileScreen() {
 
   const router = useRouter();
-  const { user, logout } = useAuth();
-  const [userData, setUserData] = useState(null);
+  const { user, logout, userData, updateUserData } = useAuth();
 
   const handleDeleteAccount = () => {
     router.push('/delete-account');
   };
 
-  useEffect(() => {
-    if (!user) return;
-
-    const fetchUserData = async () => {
-      try {
-        const userRef = doc(db, "users", user.uid);
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists()) {
-          setUserData(userSnap.data());
-        }
-      } catch (error) {
-        console.error("Error fetching user data in profile:", error);
-      }
-    };
-
-    fetchUserData();
-  }, [user]);
+  const goToEditProfile = () => {
+    router.push('/edit-profile');
+  };
 
   const gotToTerms = () => {
     const url = "https://docs.google.com/document/d/17LlGB0Y6MSfKoRVlKr0SbYyaG8UG8YdVAFO_VNn4Kbo/edit?usp=sharing"
@@ -43,6 +26,14 @@ export default function ProfileScreen() {
   const gotPrivacy = () => {
     const url = "https://docs.google.com/document/d/1uqLAvQK6iBXlmJZUoyk3dD4iw7dW5Qjbdy53UXhnPmE/edit?usp=sharing"
     Linking.openURL(url);
+  };
+
+  const handleSupport = () => {
+    const email = "morenov.dev@gmail.com";
+    const subject = encodeURIComponent(`Soporte LogiPay - ${userData?.firstName || ''} ${userData?.lastName || ''}`);
+    const body = encodeURIComponent(`Hola,\n\nNecesito ayuda con LogiPay.\n\nMis datos:\n- Correo: ${user?.email || 'N/A'}\n- Negocio: ${userData?.businessName || 'N/A'}\n\n[Describe tu problema aquí]`);
+    
+    Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
   };
 
 
@@ -56,26 +47,23 @@ export default function ProfileScreen() {
         <Text style={styles.userName}>
           {userData ? `${userData.firstName} ${userData.lastName}` : 'Cargando...'}
         </Text>
+        {userData?.businessName && (
+          <Text style={styles.businessName}>{userData.businessName}</Text>
+        )}
         <Text style={styles.userEmail}>{user?.email || 'email@ejemplo.com'}</Text>
       </View>
 
       <View style={styles.menu}>
         <Text style={styles.menuTitle}>Ajustes</Text>
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity style={styles.menuItem} onPress={goToEditProfile}>
           <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
             <Ionicons name="settings-outline" size={20} color="#1C1C1E" />
           </View>
-          <Text style={styles.menuText}>Configuración de la cuenta</Text>
+          <Text style={styles.menuText}>Editar perfil</Text>
           <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem}>
-          <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
-            <Ionicons name="notifications-outline" size={20} color="#1C1C1E" />
-          </View>
-          <Text style={styles.menuText}>Notificaciones</Text>
-          <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
-        </TouchableOpacity>
+
 
         <Text style={styles.menuTitle}>Información</Text>
         <TouchableOpacity style={styles.menuItem} onPress={gotPrivacy}>
@@ -93,7 +81,7 @@ export default function ProfileScreen() {
           <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem}>
+        <TouchableOpacity style={styles.menuItem} onPress={handleSupport}>
           <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
             <Ionicons name="help-circle-outline" size={20} color="#1C1C1E" />
           </View>
@@ -133,7 +121,8 @@ const styles = StyleSheet.create({
   profileHeader: { alignItems: 'center', paddingVertical: 40, backgroundColor: 'white' },
   avatarContainer: { marginBottom: 15 },
   userName: { fontSize: 24, fontWeight: 'bold', color: '#1C1C1E' },
-  userEmail: { fontSize: 16, color: '#8E8E93', marginTop: 4 },
+  businessName: { fontSize: 18, color: '#4C669F', marginTop: 4, fontWeight: '600' },
+  userEmail: { fontSize: 16, color: '#8E8E93', marginTop: 2 },
   menu: { marginTop: 20 },
   menuTitle: { fontSize: 13, fontWeight: '600', color: '#8E8E93', marginLeft: 16, marginVertical: 8, textTransform: 'uppercase' },
   menuItem: {
@@ -147,5 +136,5 @@ const styles = StyleSheet.create({
   },
   iconBox: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   menuText: { flex: 1, fontSize: 17, color: '#1C1C1E' },
-  version: { textAlign: 'center', color: '#8E8E93', fontSize: 12, marginVertical: 30 }
+  version: { textAlign: 'center', color: '#8E8E93', fontSize: 12, marginVertical: 30 },
 });

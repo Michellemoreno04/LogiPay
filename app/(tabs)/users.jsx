@@ -83,7 +83,7 @@ export default function UsersScreen() {
                 />
               </View>
 
-              <Text style={styles.label}>Historial de pagos y deudas</Text>
+              <Text style={styles.label}>Historial de clientes</Text>
             </View>
           }
           contentContainerStyle={styles.listContent}

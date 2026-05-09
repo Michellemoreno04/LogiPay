@@ -11,7 +11,7 @@ function RootLayoutNav() {
   useEffect(() => {
     if (loading) return;
 
-    const inAuthGroup = segments[0] === 'welcome' || segments[0] === 'login' || segments[0] === 'register' || segments[0] === 'business-type' || segments[0] === 'business-name';
+    const inAuthGroup = segments[0] === 'welcome' || segments[0] === 'login' || segments[0] === 'loginScreen' || segments[0] === 'register' || segments[0] === 'business-type' || segments[0] === 'business-name';
 
     if (!user && !inAuthGroup) {
       // Redirect to welcome screen if not logged in
@@ -56,12 +56,14 @@ function RootLayoutNav() {
       <Stack.Screen name="business-type" options={{ headerShown: false }} />
       <Stack.Screen name="business-name" options={{ headerShown: false }} />
       <Stack.Screen name="login" options={{ headerShown: false }} />
+      <Stack.Screen name="loginScreen" options={{ headerShown: false }} />
       <Stack.Screen name="register" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="[id]" options={{ headerShown: false }} />
       <Stack.Screen name="add-user" options={{ title: "Nuevo Cliente", presentation: 'modal' }} />
       <Stack.Screen name="all-transactions" options={{ title: "Todas las Transacciones", presentation: 'modal' }} />
       <Stack.Screen name="delete-account" options={{ title: "Eliminar Cuenta", presentation: 'modal' }} />
+      <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
 
     </Stack>
   );

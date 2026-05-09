@@ -26,7 +26,7 @@ export default function UserDetailsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [transactionType, setTransactionType] = useState('payment'); // 'payment' | 'debt'
   const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
+  const [description, setDescription] = useState(transactionType === 'payment' ? 'Pago' : 'Deuda');
   const [saving, setSaving] = useState(false);
   const [optionsVisible, setOptionsVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -85,7 +85,7 @@ export default function UserDetailsScreen() {
   const openModal = useCallback((type) => {
     setTransactionType(type);
     setAmount('');
-    setDescription('');
+    setDescription(type === 'debt' ? 'Deuda' : 'Pago');
     setModalVisible(true);
   }, []);
 
@@ -290,6 +290,7 @@ export default function UserDetailsScreen() {
           <Text style={styles.avatarText}>{(client.name || '?').charAt(0).toUpperCase()}</Text>
         </View>
         <Text style={styles.userName}>{client.name}</Text>
+        {client.email ? <Text style={styles.userInfoText}>{client.email}</Text> : null}
         {client.phone ? <Text style={styles.userInfoText}>{client.phone}</Text> : null}
 
         <View style={styles.balanceBox}>
@@ -403,15 +404,15 @@ export default function UserDetailsScreen() {
             </View>
 
             {/* Description */}
-            <Text style={styles.inputLabel}>Descripción *</Text>
+            <Text style={styles.inputLabel}>Título *</Text>
             <TextInput
               style={styles.descriptionInput}
               placeholder={transactionType === 'payment' ? 'Ej. Abono a cuenta...' : 'Ej. Préstamo de material...'}
               placeholderTextColor="#C7C7CC"
-              value={description}
+              value={transactionType === 'payment' ? 'Pago' : 'Deuda'}
               onChangeText={setDescription}
               multiline
-              numberOfLines={3}
+
             />
 
             {/* Save button */}
@@ -422,7 +423,7 @@ export default function UserDetailsScreen() {
                 transactionType === 'payment' ? styles.savePaymentTheme : styles.saveDebtTheme
               ]}
               onPress={handleSaveTransaction}
-              disabled={!amount || !description.trim() || saving}
+              disabled={saving}
             >
               {saving ? (
                 <ActivityIndicator color="white" />
