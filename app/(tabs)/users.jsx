@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
 import { Link } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { FontAwesome6, Ionicons } from '@expo/vector-icons';
 import { collection, query, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebaseConfig/config';
 import { useAuth } from '../../authContext/authContext';
@@ -98,7 +98,7 @@ export default function UsersScreen() {
 
       <Link href="/add-user" asChild>
         <TouchableOpacity style={styles.fab}>
-          <Ionicons name="add" size={30} color="white" />
+          <FontAwesome6 name="user-plus" size={24} color="white" />
         </TouchableOpacity>
       </Link>
     </View>
