@@ -105,6 +105,7 @@ export default function WelcomeScreen() {
 
   // Open handler (JS thread — no worklet needed)
   const openBenefits = useCallback(() => {
+
     heroScale.value = withTiming(0.9, { duration: 350, easing: Easing.out(Easing.cubic) });
     heroOpacity.value = withTiming(0.4, { duration: 350 });
     backdropOpacity.value = withTiming(1, { duration: 400 });
@@ -137,7 +138,6 @@ export default function WelcomeScreen() {
 
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: backdropOpacity.value,
-    pointerEvents: backdropOpacity.value > 0 ? 'auto' : 'none',
   }));
 
   const heroStyle = useAnimatedStyle(() => ({
@@ -179,7 +179,7 @@ export default function WelcomeScreen() {
       </View>
 
       {/* ── Backdrop ── */}
-      <Animated.View style={[styles.backdrop, backdropStyle]} pointerEvents="box-none">
+      <Animated.View style={[styles.backdrop, backdropStyle]} pointerEvents={showBenefits ? "auto" : "none"}>
         <Pressable style={StyleSheet.absoluteFill} onPress={closeBenefits} />
       </Animated.View>
 
