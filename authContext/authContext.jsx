@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig/config';
+import { useRouter } from 'expo-router';
 
 const AuthContext = createContext({});
 
@@ -10,6 +11,7 @@ export const useAuth = () => {
 };
 
 export default function AuthProvider({ children }) {
+  const router = useRouter();
   const [user, setUser] = useState(null);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -60,6 +62,7 @@ export default function AuthProvider({ children }) {
     } catch (error) {
       console.error("Error signing out:", error);
     }
+    router.push("/welcome");
   };
 
   const saveBusinessType = (type) => {

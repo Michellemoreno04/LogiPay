@@ -2,13 +2,12 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking } from 'r
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../authContext/authContext';
-import { useState } from 'react';
 
 
 export default function ProfileScreen() {
 
   const router = useRouter();
-  const { user, logout, userData, updateUserData } = useAuth();
+  const { user, logout, userData } = useAuth();
 
   const handleDeleteAccount = () => {
     router.push('/delete-account');
@@ -32,7 +31,7 @@ export default function ProfileScreen() {
     const email = "morenov.dev@gmail.com";
     const subject = encodeURIComponent(`Soporte LogiPay - ${userData?.firstName || ''} ${userData?.lastName || ''}`);
     const body = encodeURIComponent(`Hola,\n\nNecesito ayuda con LogiPay.\n\nMis datos:\n- Correo: ${user?.email || 'N/A'}\n- Negocio: ${userData?.businessName || 'N/A'}\n\n[Describe tu problema aquí]`);
-    
+
     Linking.openURL(`mailto:${email}?subject=${subject}&body=${body}`);
   };
 

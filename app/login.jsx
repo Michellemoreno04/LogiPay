@@ -51,7 +51,9 @@ export default function LoginScreen() {
       Alert.alert("Error de Inicio de Sesión", errorMessage);
     } finally {
       setLoading(false);
+      router.push("/(tabs)");
     }
+
   };
 
   return (

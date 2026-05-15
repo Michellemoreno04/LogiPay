@@ -72,6 +72,7 @@ export default function RegisterScreen() {
       Alert.alert("Error de Registro", errorMessage);
     } finally {
       setLoading(false);
+      router.replace("/business-type");
     }
   };
 

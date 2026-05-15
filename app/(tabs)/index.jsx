@@ -1,17 +1,42 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Modal, TextInput, KeyboardAvoidingView, Platform, Alert, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { FontAwesome6, Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
 import { useAuth } from '../../authContext/authContext';
-import { collection, query, onSnapshot, orderBy, limit, addDoc, updateDoc, doc, increment, serverTimestamp } from 'firebase/firestore';
+import { collection, query, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../firebaseConfig/config';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import OrganisazionScreen from '../organisazionScreen';
 import ComercialScreen from '../comercialScreen';
 import ActivityItem from '../../components/ActivityItem';
 import AdjustModal from '../../components/AdjustModal';
+import { TourZone, useTour } from 'react-native-lumen';
+
+
 
 export default function HomeScreen() {
   const { user, userData } = useAuth();
+
+  const { start } = useTour();
+
+  useEffect(() => {
+    const checkTour = async () => {
+      if (!user) return;
+      try {
+        const hasSeenTour = await AsyncStorage.getItem(`hasSeenTour_${user.uid}`);
+        if (hasSeenTour !== 'true') {
+          setTimeout(() => {
+            start();
+            AsyncStorage.setItem(`hasSeenTour_${user.uid}`, 'true');
+          }, 500);
+        }
+      } catch (error) {
+        console.error('Error handling tour status:', error);
+      }
+    };
+
+    checkTour();
+  }, [user, start]);
 
   const [clients, setClients] = useState([]);
   const [recentActivity, setRecentActivity] = useState([]);
@@ -125,20 +150,36 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
         <View style={styles.header}>
-          <Text style={styles.welcome}>{userData?.businessName}</Text>
-          <Text style={styles.businessTypeTag}>{userData?.businessType}</Text>
-          <Text style={styles.subtitle}>Aquí tienes un resumen de hoy. </Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.welcome} numberOfLines={1} adjustsFontSizeToFit>
+              {userData?.businessName || 'Tu Negocio'}
+            </Text>
+          </View>
+          <View style={styles.badgeContainer}>
+            <View style={styles.businessBadge}>
+              <Text style={styles.businessTypeTag}>{userData?.businessType || 'Comercial'}</Text>
+            </View>
+          </View>
+          <Text style={styles.subtitle}>Aquí tienes un resumen de hoy.</Text>
         </View>
 
-        <View style={styles.statsGrid}>
-          {userData?.businessType === 'organization' ? (
-            <OrganisazionScreen userData={userData} onAdjust={openAdjustModal} />
-          ) : userData?.businessType === 'comercial' ? (
-            <>
-              <ComercialScreen userData={userData} onAdjust={openAdjustModal} />
-            </>
-          ) : null}
-        </View>
+        <TourZone
+          stepKey="step-2"
+          name="Resumen Financiero"
+          description="Aquí puedes ver el total de tus finanzas."
+          order={1}
+          borderRadius={16}
+        >
+          <View style={styles.statsGrid}>
+            {userData?.businessType === 'organization' ? (
+              <OrganisazionScreen userData={userData} onAdjust={openAdjustModal} />
+            ) : userData?.businessType === 'comercial' ? (
+              <>
+                <ComercialScreen userData={userData} onAdjust={openAdjustModal} />
+              </>
+            ) : null}
+          </View>
+        </TourZone>
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -155,8 +196,8 @@ export default function HomeScreen() {
           ) : recentActivity.length === 0 ? (
             <View style={styles.emptyActivity}>
               <Ionicons name="receipt-outline" size={40} color="#C7C7CC" />
-              <Text style={styles.emptyText}>No hay actividad reciente.</Text>
-              <Text style={styles.emptySubText}>Las transacciones de tus clientes aparecerán aquí.</Text>
+              <Text style={styles.emptyText}>Aun no tienes actividad.</Text>
+              <Text style={styles.emptySubText}>Los registros de tus los usuarios aparecerán aquí.</Text>
             </View>
           ) : (
             recentActivity.map((item) => <ActivityItem key={item.id} item={item} />)
@@ -165,27 +206,63 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* ─── Ajuste Modal ─── */}
-      <AdjustModal 
-        visible={adjustModalVisible} 
-        onClose={() => setAdjustModalVisible(false)} 
-        userData={userData} 
-        user={user} 
+      <AdjustModal
+        visible={adjustModalVisible}
+        onClose={() => setAdjustModalVisible(false)}
+        userData={userData}
+        user={user}
       />
 
-      <Link href="/add-user" asChild>
-        <TouchableOpacity style={styles.fab}>
-          <FontAwesome6 name="user-plus" size={24} color="white" />
-        </TouchableOpacity>
-      </Link>
+
+
+      <TourZone
+        stepKey="step-1"
+        name="Agregar Cliente"
+        description="Aquí puedes agregar tus clientes."
+        order={2}
+        shape="circle"
+        style={styles.fabContainer}
+      >
+        <Link href="/add-user" asChild>
+          <TouchableOpacity style={styles.fabButton}>
+            <FontAwesome6 name="user-plus" size={24} color="white" />
+          </TouchableOpacity>
+        </Link>
+      </TourZone>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F2F2F7', marginTop: 30 },
-  header: { padding: 20, paddingTop: 30 },
-  welcome: { fontSize: 28, fontWeight: 'bold', color: '#1C1C1E' },
-  subtitle: { fontSize: 16, color: '#8E8E93', marginTop: 4 },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 40,
+    paddingBottom: 15,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  welcome: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#04047ab1',
+    letterSpacing: -0.5,
+  },
+  badgeContainer: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  businessBadge: {
+    backgroundColor: '#E5EFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    alignSelf: 'flex-start',
+  },
+  subtitle: { fontSize: 16, color: '#8E8E93' },
   statsGrid: { flexDirection: 'row', padding: 10, justifyContent: 'space-between' },
   statCard: {
     flex: 1,
@@ -202,8 +279,9 @@ const styles = StyleSheet.create({
   businessTypeTag: {
     fontSize: 12,
     color: '#4C669F',
-    fontWeight: '600',
-    marginTop: 4,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   statValue: { fontSize: 20, fontWeight: 'bold', color: '#1C1C1E', marginTop: 8 },
   statLabel: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
@@ -233,10 +311,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
-  fab: {
+  fabContainer: {
     position: 'absolute',
     bottom: 30,
     right: 30,
+  },
+  fabButton: {
     width: 60,
     height: 60,
     borderRadius: 30,

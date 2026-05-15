@@ -35,7 +35,7 @@ export const useGoogleAuth = () => {
     setIsAuthenticating(true);
     try {
       await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      
+
       // Cerramos sesión previa para forzar el selector de cuentas
       try {
         await GoogleSignin.signOut();
@@ -47,13 +47,13 @@ export const useGoogleAuth = () => {
       const idToken = userInfo.idToken || userInfo.data?.idToken;
 
       if (!idToken) {
-        throw new Error('No se recibió el token de Google.');
+        console.error('No se recibió el token de Google.');
       }
 
       const credential = GoogleAuthProvider.credential(idToken);
       const userCredential = await signInWithCredential(auth, credential);
       const user = userCredential.user;
-      
+
       const userRef = doc(db, 'users', user.uid);
       const userDoc = await getDoc(userRef);
 
