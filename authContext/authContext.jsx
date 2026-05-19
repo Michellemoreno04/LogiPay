@@ -3,6 +3,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig/config';
 import { useRouter } from 'expo-router';
+import { Alert } from 'react-native';
 
 const AuthContext = createContext({});
 
@@ -57,12 +58,20 @@ export default function AuthProvider({ children }) {
   }, []);
 
   const logout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error("Error signing out:", error);
-    }
-    router.push("/welcome");
+    Alert.alert('Seguro que quieres cerrar sesión?', '', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Sí',
+        onPress: async () => {
+          try {
+            await signOut(auth);
+            router.replace("/welcome");
+          } catch (error) {
+            console.error("Error signing out:", error);
+          }
+        }
+      }
+    ]);
   };
 
   const saveBusinessType = (type) => {

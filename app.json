@@ -4,13 +4,14 @@
     "slug": "LogiPay",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/ios-app-icon.png",
     "scheme": "logipay",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.logipay.app",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -18,9 +19,9 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/android-app-icon.png",
+        "backgroundImage": "./assets/images/android-app-icon.png",
+        "monochromeImage": "./assets/images/android-app-icon.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -35,12 +36,12 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/images/ios-app-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#7FB4E9",
           "dark": {
-            "backgroundColor": "#000000"
+            "backgroundColor": "#7FB4E9"
           }
         }
       ],
@@ -61,6 +62,12 @@
         "projectId": "59d9a8b9-03da-4313-b6b6-04a1ea8a5faf"
       }
     },
-    "owner": "moreno.dev"
+    "owner": "moreno.dev",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/59d9a8b9-03da-4313-b6b6-04a1ea8a5faf"
+    }
   }
 }

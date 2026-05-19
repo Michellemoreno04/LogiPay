@@ -24,6 +24,10 @@ export default function RegisterScreen() {
     Linking.openURL(url);
   };
 
+  const gotToPrivacy = () => {
+    const url = "https://docs.google.com/document/d/1uqLAvQK6iBXlmJZUoyk3dD4iw7dW5Qjbdy53UXhnPmE/edit?usp=sharing"
+    Linking.openURL(url);
+  };
   const handleRegister = async () => {
     if (!firstName || !lastName || !email || !password || !confirmPassword) {
       Alert.alert("Error", "Por favor completa todos los campos.");
@@ -75,6 +79,8 @@ export default function RegisterScreen() {
       router.replace("/business-type");
     }
   };
+
+
 
 
   return (
@@ -180,6 +186,7 @@ export default function RegisterScreen() {
             <Text style={styles.linkText} onPress={gotToTerms}>
               Términos y Condiciones
             </Text>
+            <Text style={styles.linkText} onPress={gotToPrivacy}>Política de Privacidad</Text>
           </View>
         </ScrollView>
       </TouchableWithoutFeedback>
@@ -296,6 +303,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   linkText: {
+    fontSize: 12,
     color: '#4C669F',
     fontWeight: '600',
     textDecorationLine: 'underline',

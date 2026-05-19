@@ -9,11 +9,13 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig/config';
 import { useAuth } from './authContext';
 import { Alert } from 'react-native';
+import { useRouter } from 'expo-router';
 
 export const useGoogleAuth = () => {
   const { businessType, businessName } = useAuth();
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     const initGoogle = async () => {
@@ -41,13 +43,14 @@ export const useGoogleAuth = () => {
         await GoogleSignin.signOut();
       } catch (error) {
         // Ignorar si no hay sesión activa
+        console.log('No hay sesión activa');
       }
 
       const userInfo = await GoogleSignin.signIn();
       const idToken = userInfo.idToken || userInfo.data?.idToken;
 
       if (!idToken) {
-        console.error('No se recibió el token de Google.');
+        throw new Error('No se recibió el token de Google.');
       }
 
       const credential = GoogleAuthProvider.credential(idToken);
@@ -72,7 +75,11 @@ export const useGoogleAuth = () => {
           totalPayment: 0,
           totalDebt: 0
         });
+        router.replace('/business-type');
+      } else {
+        router.replace('/(tabs)');
       }
+
     } catch (error) {
       console.error("Error logging in with Google:", error);
       if (isErrorWithCode(error)) {
@@ -81,16 +88,16 @@ export const useGoogleAuth = () => {
             // El usuario canceló
             break;
           case statusCodes.IN_PROGRESS:
-            Alert.alert("Error", "Inicio de sesión ya está en progreso.");
+            Alert.alert("Error", `Inicio de sesión ya está en progreso. (${error.message || error.code})`);
             break;
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
-            Alert.alert("Error", "Google Play Services no está disponible.");
+            Alert.alert("Error", `Google Play Services no está disponible. (${error.message || error.code})`);
             break;
           default:
-            Alert.alert("Error", "No se pudo iniciar sesión con Google. Inténtalo de nuevo.");
+            Alert.alert("Error", `No se pudo iniciar sesión con Google: ${error.message || error.code || error}`);
         }
       } else {
-        Alert.alert("Error", "Ocurrió un problema inesperado al iniciar sesión.");
+        Alert.alert("Error", `Ocurrió un problema inesperado al iniciar sesión: ${error.message || error}`);
       }
     } finally {
       setIsAuthenticating(false);

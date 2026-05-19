@@ -19,6 +19,11 @@ export default function LoginScreen() {
     Linking.openURL(url);
   };
 
+  const gotToPrivacy = () => {
+    const url = "https://docs.google.com/document/d/1uqLAvQK6iBXlmJZUoyk3dD4iw7dW5Qjbdy53UXhnPmE/edit?usp=sharing"
+    Linking.openURL(url);
+  };
+
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -124,6 +129,7 @@ export default function LoginScreen() {
             <Text style={styles.linkText} onPress={gotToTerms}>
               Términos y Condiciones
             </Text>
+            <Text style={styles.linkText} onPress={gotToPrivacy}>Política de Privacidad</Text>
           </View>
         </ScrollView>
       </TouchableWithoutFeedback>
@@ -236,6 +242,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   linkText: {
+    fontSize: 12,
     color: '#4C669F',
     fontWeight: '600',
     textDecorationLine: 'underline',

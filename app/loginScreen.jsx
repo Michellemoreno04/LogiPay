@@ -7,6 +7,7 @@ import {
   StatusBar,
   Linking,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +17,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGoogleAuth } from '../authContext/googleAuth';
+import { useAppleAuth } from '../authContext/appleAuth';
+
 
 
 const { width } = Dimensions.get('window');
@@ -23,6 +26,7 @@ const { width } = Dimensions.get('window');
 export default function LoginSelectionScreen() {
   const router = useRouter();
   const { handleGoogleLogin, request, isAuthenticating } = useGoogleAuth();
+  const { handleAppleLogin, isAuthenticating: isAppleAuthenticating } = useAppleAuth();
 
   const handleGmailLogin = () => {
     // Navigate to the existing email login screen
@@ -109,11 +113,33 @@ export default function LoginSelectionScreen() {
               }
             </TouchableOpacity>
           </Animated.View>
+
+          {Platform.OS === 'ios' && (
+            <Animated.View entering={FadeInUp.delay(1000).duration(800)}>
+              <TouchableOpacity
+                style={[styles.appleButton, isAppleAuthenticating && { opacity: 0.5 }]}
+                onPress={handleAppleLogin}
+                activeOpacity={0.8}
+                disabled={isAppleAuthenticating}
+              >
+                {isAppleAuthenticating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <>
+                    <View style={styles.iconWrapper}>
+                      <Ionicons name="logo-apple" size={24} color="white" />
+                    </View>
+                    <Text style={styles.appleButtonText}>Iniciar Sesión con Apple</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          )}
         </View>
 
         {/* Footer */}
         <Animated.View
-          entering={FadeInUp.delay(1000).duration(800)}
+          entering={FadeInUp.delay(1200).duration(800)}
           style={styles.footer}
         >
           <Text style={styles.footerText}>
@@ -226,6 +252,25 @@ const styles = StyleSheet.create({
   },
   googleButtonText: {
     color: '#1C1C1E',
+    fontSize: 17,
+    fontWeight: '700',
+    marginLeft: 12,
+  },
+  appleButton: {
+    backgroundColor: '#000000',
+    flexDirection: 'row',
+    height: 60,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  appleButtonText: {
+    color: 'white',
     fontSize: 17,
     fontWeight: '700',
     marginLeft: 12,

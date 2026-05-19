@@ -20,6 +20,11 @@ function timeAgo(date) {
   return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
 }
 
+const numberFormatter = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 export default function ActivityItem({ item }) {
   return (
     <TouchableOpacity
@@ -50,7 +55,7 @@ export default function ActivityItem({ item }) {
         styles.activityAmount,
         { color: item.type === 'payment' ? '#34C759' : '#FF3B30' }
       ]}>
-        {item.type === 'payment' ? '+' : '-'}${item.amount?.toFixed(2) || '0.00'}
+        {item.type === 'payment' ? '+' : '-'}${numberFormatter.format(item.amount) || '0.00'}
       </Text>
     </TouchableOpacity>
   );

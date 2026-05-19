@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   Modal, TextInput, KeyboardAvoidingView, Platform,
-  ActivityIndicator, Alert
+  ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +12,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebaseConfig/config';
 import { useAuth } from '../authContext/authContext';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+
+
 
 export default function UserDetailsScreen() {
   const { id } = useLocalSearchParams();
@@ -27,6 +31,7 @@ export default function UserDetailsScreen() {
   const [transactionType, setTransactionType] = useState('payment'); // 'payment' | 'debt'
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState(transactionType === 'payment' ? 'Pago' : 'Deuda');
+  const [editingTransactionId, setEditingTransactionId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [optionsVisible, setOptionsVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -86,6 +91,15 @@ export default function UserDetailsScreen() {
     setTransactionType(type);
     setAmount('');
     setDescription(type === 'debt' ? 'Deuda' : 'Pago');
+    setEditingTransactionId(null);
+    setModalVisible(true);
+  }, []);
+
+  const openEditModal = useCallback((transaction) => {
+    setTransactionType(transaction.type);
+    setAmount(transaction.amount.toString());
+    setDescription(transaction.description);
+    setEditingTransactionId(transaction.id);
     setModalVisible(true);
   }, []);
 
@@ -107,41 +121,125 @@ export default function UserDetailsScreen() {
       const txRef = collection(db, 'users', user.uid, 'clients', id, 'transactions');
       const userRef = doc(db, 'users', user.uid);
 
-      // 1. Add the transaction document
-      await addDoc(txRef, {
-        type: transactionType,
-        amount: parsedAmount,
-        description: description.trim(),
-        createdAt: serverTimestamp(),
-      });
+      const batch = writeBatch(db);
 
-      // 2. Update the client's balance atomically
-      // payment → balance goes UP (positive), debt → balance goes DOWN (negative)
-      const balanceChange = transactionType === 'payment' ? parsedAmount : -parsedAmount;
-      await updateDoc(clientRef, {
-        balance: increment(balanceChange),
-      });
+      if (editingTransactionId) {
+        const oldTx = transactions.find(t => t.id === editingTransactionId);
+        if (!oldTx) throw new Error("Transaction not found");
 
-      // 3. Update the user's global totals
-      if (transactionType === 'payment') {
-        await updateDoc(userRef, {
-          totalPayment: increment(parsedAmount),
+        const txDocRef = doc(db, 'users', user.uid, 'clients', id, 'transactions', editingTransactionId);
+        batch.update(txDocRef, {
+          type: transactionType,
+          amount: parsedAmount,
+          description: description.trim(),
         });
+
+        const oldBalanceChange = oldTx.type === 'payment' ? -oldTx.amount : oldTx.amount;
+        const newBalanceChange = transactionType === 'payment' ? parsedAmount : -parsedAmount;
+        const netBalanceChange = oldBalanceChange + newBalanceChange;
+
+        if (netBalanceChange !== 0) {
+          batch.update(clientRef, { balance: increment(netBalanceChange) });
+        }
+
+        let paymentDiff = 0;
+        let debtDiff = 0;
+        if (oldTx.type === 'payment') paymentDiff -= oldTx.amount;
+        else debtDiff -= oldTx.amount;
+
+        if (transactionType === 'payment') paymentDiff += parsedAmount;
+        else debtDiff += parsedAmount;
+
+        const userUpdate = {};
+        if (paymentDiff !== 0) userUpdate.totalPayment = increment(paymentDiff);
+        if (debtDiff !== 0) userUpdate.totalDebt = increment(debtDiff);
+
+        if (Object.keys(userUpdate).length > 0) {
+          batch.update(userRef, userUpdate);
+        }
       } else {
-        await updateDoc(userRef, {
-          totalDebt: increment(parsedAmount),
+        const newTxRef = doc(txRef);
+        batch.set(newTxRef, {
+          type: transactionType,
+          amount: parsedAmount,
+          description: description.trim(),
+          createdAt: serverTimestamp(),
         });
+
+        const balanceChange = transactionType === 'payment' ? parsedAmount : -parsedAmount;
+        batch.update(clientRef, {
+          balance: increment(balanceChange),
+        });
+
+        if (transactionType === 'payment') {
+          batch.update(userRef, { totalPayment: increment(parsedAmount) });
+        } else {
+          batch.update(userRef, { totalDebt: increment(parsedAmount) });
+        }
       }
+
+      await batch.commit();
 
       setModalVisible(false);
       setAmount('');
       setDescription('');
+      setEditingTransactionId(null);
     } catch (error) {
       console.error('Error saving transaction:', error);
       Alert.alert('Error', 'No se pudo guardar la transacción. Intenta de nuevo.');
     } finally {
       setSaving(false);
     }
+  };
+
+  // ─── Delete Transaction ───
+  const handleDeleteTransaction = () => {
+    Alert.alert(
+      "Eliminar Transacción",
+      "¿Estás seguro de que deseas eliminar esta transacción?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            setSaving(true);
+            try {
+              const oldTx = transactions.find(t => t.id === editingTransactionId);
+              if (!oldTx) return;
+
+              const batch = writeBatch(db);
+
+              const txDocRef = doc(db, 'users', user.uid, 'clients', id, 'transactions', editingTransactionId);
+              batch.delete(txDocRef);
+
+              const clientRef = doc(db, 'users', user.uid, 'clients', id);
+              const oldBalanceChange = oldTx.type === 'payment' ? -oldTx.amount : oldTx.amount;
+              batch.update(clientRef, { balance: increment(oldBalanceChange) });
+
+              const userRef = doc(db, 'users', user.uid);
+              if (oldTx.type === 'payment') {
+                batch.update(userRef, { totalPayment: increment(-oldTx.amount) });
+              } else {
+                batch.update(userRef, { totalDebt: increment(-oldTx.amount) });
+              }
+
+              await batch.commit();
+
+              setModalVisible(false);
+              setAmount('');
+              setDescription('');
+              setEditingTransactionId(null);
+            } catch (error) {
+              console.error('Error deleting transaction:', error);
+              Alert.alert('Error', 'No se pudo eliminar la transacción.');
+            } finally {
+              setSaving(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   // ─── Delete client from Firestore ───
@@ -222,7 +320,7 @@ export default function UserDetailsScreen() {
 
   // ─── Transaction row renderer ───
   const renderTransaction = ({ item }) => (
-    <View style={styles.transactionCard}>
+    <TouchableOpacity style={styles.transactionCard} onPress={() => openEditModal(item)} activeOpacity={0.7}>
       <View style={styles.transactionIconContainer}>
         <View style={[
           styles.iconBg,
@@ -243,9 +341,9 @@ export default function UserDetailsScreen() {
         styles.transactionAmount,
         item.type === 'payment' ? styles.positiveBalance : styles.negativeBalance
       ]}>
-        {item.type === 'payment' ? '+' : '-'}${item.amount.toFixed(2)}
+        {item.type === 'payment' ? '+' : '-'}${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.amount)}
       </Text>
-    </View>
+    </TouchableOpacity>
   );
 
   // ─── Loading state ───
@@ -274,212 +372,228 @@ export default function UserDetailsScreen() {
   const balance = client.balance || 0;
 
   return (
-    <View style={styles.container}>
-      {/* Header Info */}
-      <View style={styles.headerContainer}>
-        <View style={styles.headerTopActions}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.headerIconButton}>
-            <Ionicons name="arrow-back" size={24} color="#1C1C1E" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setOptionsVisible(true)} style={styles.headerIconButton}>
-            <Ionicons name="ellipsis-vertical" size={24} color="#1C1C1E" />
-          </TouchableOpacity>
+    <SafeAreaView style={{ flex: 1 }}>
+
+      <View style={styles.container}>
+        {/* Header Info */}
+        <View style={styles.headerContainer}>
+          <View style={styles.headerTopActions}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.headerIconButton}>
+              <Ionicons name="arrow-back" size={24} color="#1C1C1E" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setOptionsVisible(true)} style={styles.headerIconButton}>
+              <Ionicons name="ellipsis-vertical" size={24} color="#1C1C1E" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{(client.name || '?').charAt(0).toUpperCase()}</Text>
+          </View>
+          <Text style={styles.userName}>{client.name}</Text>
+          {client.email ? <Text style={styles.userInfoText}>{client.email}</Text> : null}
+          {client.phone ? <Text style={styles.userInfoText}>{client.phone}</Text> : null}
+
+          <View style={styles.balanceBox}>
+            <Text style={styles.balanceTitle}>Saldo Actual</Text>
+            <Text style={[
+              styles.balanceMainAmount,
+              balance < 0 ? styles.negativeBalance :
+                balance > 0 ? styles.positiveBalance :
+                  styles.neutralBalance
+            ]}>
+              ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Math.abs(balance))} {balance < 0 ? '(Debe)' : balance > 0 ? '(A favor)' : ''}
+            </Text>
+          </View>
+
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.paymentButton]}
+              onPress={() => openModal('payment')}
+            >
+              <Ionicons name="add-circle-outline" size={20} color="white" />
+              <Text style={styles.actionButtonText}>Abonar Pago</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.debtButton]}
+              onPress={() => openModal('debt')}
+            >
+              <Ionicons name="remove-circle-outline" size={20} color="white" />
+              <Text style={styles.actionButtonText}>Agregar Deuda</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{(client.name || '?').charAt(0).toUpperCase()}</Text>
+        {/* History List */}
+        <View style={styles.historyContainer}>
+          <Text style={styles.historyTitle}>Historial de Transacciones</Text>
+          <FlatList
+            data={transactions}
+            keyExtractor={(item) => item.id}
+            renderItem={renderTransaction}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Ionicons name="receipt-outline" size={48} color="#C7C7CC" />
+                <Text style={styles.emptyText}>No hay transacciones registradas.</Text>
+              </View>
+            }
+          />
         </View>
-        <Text style={styles.userName}>{client.name}</Text>
-        {client.email ? <Text style={styles.userInfoText}>{client.email}</Text> : null}
-        {client.phone ? <Text style={styles.userInfoText}>{client.phone}</Text> : null}
 
-        <View style={styles.balanceBox}>
-          <Text style={styles.balanceTitle}>Saldo Actual</Text>
-          <Text style={[
-            styles.balanceMainAmount,
-            balance < 0 ? styles.negativeBalance :
-              balance > 0 ? styles.positiveBalance :
-                styles.neutralBalance
-          ]}>
-            ${Math.abs(balance).toFixed(2)} {balance < 0 ? '(Debe)' : balance > 0 ? '(A favor)' : ''}
-          </Text>
-        </View>
-
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.paymentButton]}
-            onPress={() => openModal('payment')}
-          >
-            <Ionicons name="add-circle-outline" size={20} color="white" />
-            <Text style={styles.actionButtonText}>Abonar Pago</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionButton, styles.debtButton]}
-            onPress={() => openModal('debt')}
-          >
-            <Ionicons name="remove-circle-outline" size={20} color="white" />
-            <Text style={styles.actionButtonText}>Agregar Deuda</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* History List */}
-      <View style={styles.historyContainer}>
-        <Text style={styles.historyTitle}>Historial de Transacciones</Text>
-        <FlatList
-          data={transactions}
-          keyExtractor={(item) => item.id}
-          renderItem={renderTransaction}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Ionicons name="receipt-outline" size={48} color="#C7C7CC" />
-              <Text style={styles.emptyText}>No hay transacciones registradas.</Text>
-            </View>
-          }
-        />
-      </View>
-
-      {/* ─── Add Transaction Modal ─── */}
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        {/* ─── Add Transaction Modal ─── */}
+        <Modal
+          visible={modalVisible}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => { setModalVisible(false); setEditingTransactionId(null); }}
         >
-          <View style={styles.modalContainer}>
-            {/* Modal Header */}
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Text style={styles.modalCancel}>Cancelar</Text>
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>
-                {transactionType === 'payment' ? 'Abonar Pago' : 'Agregar Deuda'}
-              </Text>
-              <View style={{ width: 70 }} />
-            </View>
+          <KeyboardAvoidingView
+            style={styles.modalOverlay}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          >
+            <ScrollView
+              contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end', paddingTop: Platform.OS === 'ios' ? 60 : 20 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.modalContainer}>
+                {/* Modal Header */}
+                <View style={styles.modalHeader}>
+                  <View style={{ flex: 1, alignItems: 'flex-start' }}>
+                    <TouchableOpacity onPress={() => { setModalVisible(false); setEditingTransactionId(null); }}>
+                      <Text style={styles.modalCancel}>Cancelar</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.modalTitle} numberOfLines={1}>
+                    {editingTransactionId ? 'Editar Transacción' : (transactionType === 'payment' ? 'Abonar Pago' : 'Agregar Deuda')}
+                  </Text>
+                  <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                  {editingTransactionId ? (
+                    <TouchableOpacity onPress={handleDeleteTransaction}>
+                      <Ionicons name="trash-outline" size={24} color="#FF3B30" />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </View>
 
-            {/* Client name chip */}
-            <View style={styles.clientChip}>
-              <Ionicons name="person-circle-outline" size={20} color="#4C669F" />
-              <Text style={styles.clientChipText}>{client.name}</Text>
-            </View>
+              {/* Client name chip */}
+              <View style={styles.clientChip}>
+                <Ionicons name="person-circle-outline" size={20} color="#4C669F" />
+                <Text style={styles.clientChipText}>{client.name}</Text>
+              </View>
 
-            {/* Type Selector */}
-            <View style={styles.typeSelector}>
-              <TouchableOpacity
-                style={[styles.typeButton, transactionType === 'payment' && styles.typeButtonActivePayment]}
-                onPress={() => setTransactionType('payment')}
-              >
-                <Ionicons name="arrow-down-circle" size={22} color={transactionType === 'payment' ? 'white' : '#34C759'} />
-                <Text style={[styles.typeButtonText, transactionType === 'payment' && styles.typeButtonTextActive]}>Pago</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.typeButton, transactionType === 'debt' && styles.typeButtonActiveDebt]}
-                onPress={() => setTransactionType('debt')}
-              >
-                <Ionicons name="arrow-up-circle" size={22} color={transactionType === 'debt' ? 'white' : '#FF3B30'} />
-                <Text style={[styles.typeButtonText, transactionType === 'debt' && styles.typeButtonTextActive]}>Deuda</Text>
-              </TouchableOpacity>
-            </View>
+              {/* Type Selector */}
+              <View style={styles.typeSelector}>
+                <TouchableOpacity
+                  style={[styles.typeButton, transactionType === 'payment' && styles.typeButtonActivePayment]}
+                  onPress={() => setTransactionType('payment')}
+                >
+                  <Ionicons name="arrow-down-circle" size={22} color={transactionType === 'payment' ? 'white' : '#34C759'} />
+                  <Text style={[styles.typeButtonText, transactionType === 'payment' && styles.typeButtonTextActive]}>Pago</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.typeButton, transactionType === 'debt' && styles.typeButtonActiveDebt]}
+                  onPress={() => setTransactionType('debt')}
+                >
+                  <Ionicons name="arrow-up-circle" size={22} color={transactionType === 'debt' ? 'white' : '#FF3B30'} />
+                  <Text style={[styles.typeButtonText, transactionType === 'debt' && styles.typeButtonTextActive]}>Deuda</Text>
+                </TouchableOpacity>
+              </View>
 
-            {/* Amount */}
-            <Text style={styles.inputLabel}>Monto *</Text>
-            <View style={styles.amountInputContainer}>
-              <Text style={styles.currencySymbol}>$</Text>
+              {/* Amount */}
+              <Text style={styles.inputLabel}>Monto *</Text>
+              <View style={styles.amountInputContainer}>
+                <Text style={styles.currencySymbol}>$</Text>
+                <TextInput
+                  style={styles.amountInput}
+                  placeholder="0.00"
+                  placeholderTextColor="#C7C7CC"
+                  value={amount}
+                  onChangeText={(text) => setAmount(formatNumber(text))}
+                  keyboardType="decimal-pad"
+                  autoFocus
+                />
+              </View>
+
+              {/* Description */}
+              <Text style={styles.inputLabel}>Título *</Text>
               <TextInput
-                style={styles.amountInput}
-                placeholder="0.00"
+                style={styles.descriptionInput}
+                placeholder={transactionType === 'payment' ? 'Ej. Abono a cuenta...' : 'Ej. Préstamo de material...'}
                 placeholderTextColor="#C7C7CC"
-                value={amount}
-                onChangeText={(text) => setAmount(formatNumber(text))}
-                keyboardType="decimal-pad"
-                autoFocus
+                value={description}
+                onChangeText={setDescription}
+                multiline
               />
+
+              {/* Save button */}
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  (!amount || !description.trim() || saving) && styles.saveButtonDisabled,
+                  transactionType === 'payment' ? styles.savePaymentTheme : styles.saveDebtTheme
+                ]}
+                onPress={handleSaveTransaction}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Guardar Transacción</Text>
+                )}
+              </TouchableOpacity>
             </View>
-
-            {/* Description */}
-            <Text style={styles.inputLabel}>Título *</Text>
-            <TextInput
-              style={styles.descriptionInput}
-              placeholder={transactionType === 'payment' ? 'Ej. Abono a cuenta...' : 'Ej. Préstamo de material...'}
-              placeholderTextColor="#C7C7CC"
-              value={transactionType === 'payment' ? 'Pago' : 'Deuda'}
-              onChangeText={setDescription}
-              multiline
-
-            />
-
-            {/* Save button */}
-            <TouchableOpacity
-              style={[
-                styles.saveButton,
-                (!amount || !description.trim() || saving) && styles.saveButtonDisabled,
-                transactionType === 'payment' ? styles.savePaymentTheme : styles.saveDebtTheme
-              ]}
-              onPress={handleSaveTransaction}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text style={styles.saveButtonText}>Guardar Transacción</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-      {/* ─── Options Modal ─── */}
-      <Modal
-        visible={optionsVisible}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setOptionsVisible(false)}
-      >
-        <TouchableOpacity
-          style={styles.optionsOverlay}
-          activeOpacity={1}
-          onPress={() => setOptionsVisible(false)}
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </Modal>
+        {/* ─── Options Modal ─── */}
+        <Modal
+          visible={optionsVisible}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setOptionsVisible(false)}
         >
-          <View style={styles.optionsContent}>
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={() => {
-                setOptionsVisible(false);
-                // Future option: Edit client
-                Alert.alert("Info", "Funcionalidad de editar próximamente.");
-              }}
-            >
-              <Ionicons name="create-outline" size={22} color="#4C669F" />
-              <Text style={styles.optionText}>Editar cliente</Text>
-            </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.optionsOverlay}
+            activeOpacity={1}
+            onPress={() => setOptionsVisible(false)}
+          >
+            <View style={styles.optionsContent}>
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={() => {
+                  setOptionsVisible(false);
+                  // Future option: Edit client
+                  Alert.alert("Info", "Funcionalidad de editar próximamente.");
+                }}
+              >
+                <Ionicons name="create-outline" size={22} color="#4C669F" />
+                <Text style={styles.optionText}>Editar cliente</Text>
+              </TouchableOpacity>
 
-            <View style={styles.optionDivider} />
+              <View style={styles.optionDivider} />
 
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={handleDeleteClient}
-            >
-              <Ionicons name="trash-outline" size={22} color="#FF3B30" />
-              <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar cliente</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={handleDeleteClient}
+              >
+                <Ionicons name="trash-outline" size={22} color="#FF3B30" />
+                <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar cliente</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* Deleting Overlay */}
+        {deleting && (
+          <View style={styles.deletingOverlay}>
+            <ActivityIndicator size="large" color="white" />
+            <Text style={styles.deletingText}>Eliminando cliente...</Text>
           </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Deleting Overlay */}
-      {deleting && (
-        <View style={styles.deletingOverlay}>
-          <ActivityIndicator size="large" color="white" />
-          <Text style={styles.deletingText}>Eliminando cliente...</Text>
-        </View>
-      )}
-    </View>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
@@ -704,6 +818,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#1C1C1E',
+    flex: 2,
+    textAlign: 'center',
   },
   clientChip: {
     flexDirection: 'row',

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
-import { collection, addDoc, doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, increment, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { Ionicons } from '@expo/vector-icons';
 import { db } from '../firebaseConfig/config';
 import { useAuth } from '../authContext/authContext';
 
@@ -11,7 +12,9 @@ export default function AddUserScreen() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [initialBalance, setInitialBalance] = useState('');
+  const [transactionType, setTransactionType] = useState('debt'); // 'payment' | 'debt'
   const [email, setEmail] = useState('');
+  const [balanceDescription, setBalanceDescription] = useState('Saldo inicial');
 
   const handleSave = async () => {
     if (!user) {
@@ -21,35 +24,49 @@ export default function AddUserScreen() {
     setLoading(true);
     try {
       const parsedBalance = parseFloat(initialBalance.replace(/,/g, '')) || 0;
+      const batch = writeBatch(db);
+
       const clientsRef = collection(db, 'users', user.uid, 'clients');
+      const newClientRef = doc(clientsRef);
+      const clientId = newClientRef.id;
+
+      // payment → balance goes UP (positive), debt → balance goes DOWN (negative)
+      const balance = transactionType === 'payment' ? parsedBalance : -parsedBalance;
 
       // 1. Create the client document
-      const docRef = await addDoc(clientsRef, {
+      batch.set(newClientRef, {
         name,
         phone,
         email,
-        balance: -parsedBalance,
+        balance: balance,
         createdAt: serverTimestamp(),
       });
 
       // 2. If there's an initial balance, record it and update totals
       if (parsedBalance > 0) {
-        // Update the user's totalDebt with the initial balance
         const userRef = doc(db, 'users', user.uid);
-        await updateDoc(userRef, {
-          totalDebt: increment(parsedBalance),
-        });
+        if (transactionType === 'payment') {
+          batch.update(userRef, {
+            totalPayment: increment(parsedBalance),
+          });
+        } else {
+          batch.update(userRef, {
+            totalDebt: increment(parsedBalance),
+          });
+        }
 
         // Add the initial transaction to the client's history
-        const txRef = collection(db, 'users', user.uid, 'clients', docRef.id, 'transactions');
-        await addDoc(txRef, {
-          type: 'debt',
+        const txRef = collection(db, 'users', user.uid, 'clients', clientId, 'transactions');
+        const newTxRef = doc(txRef);
+        batch.set(newTxRef, {
+          type: transactionType,
           amount: parsedBalance,
-          description: 'Saldo inicial',
+          description: balanceDescription.trim() || 'Saldo inicial',
           createdAt: serverTimestamp(),
         });
       }
 
+      await batch.commit();
       router.back();
     } catch (error) {
       console.error('Error saving user:', error);
@@ -73,9 +90,14 @@ export default function AddUserScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView 
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 60 }]}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.formGroup}>
           <Text style={styles.label}>Nombre Completo *</Text>
           <TextInput
@@ -100,6 +122,28 @@ export default function AddUserScreen() {
           />
         </View>
 
+
+
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Tipo de Saldo Inicial</Text>
+          <View style={styles.typeSelector}>
+            <TouchableOpacity
+              style={[styles.typeButton, transactionType === 'payment' && styles.typeButtonActivePayment]}
+              onPress={() => setTransactionType('payment')}
+            >
+              <Ionicons name="arrow-down-circle" size={22} color={transactionType === 'payment' ? 'white' : '#34C759'} />
+              <Text style={[styles.typeButtonText, transactionType === 'payment' && styles.typeButtonTextActive]}>Abono</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.typeButton, transactionType === 'debt' && styles.typeButtonActiveDebt]}
+              onPress={() => setTransactionType('debt')}
+            >
+              <Ionicons name="arrow-up-circle" size={22} color={transactionType === 'debt' ? 'white' : '#FF3B30'} />
+              <Text style={[styles.typeButtonText, transactionType === 'debt' && styles.typeButtonTextActive]}>Deuda</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={styles.formGroup}>
           <Text style={styles.label}>Saldo Inicial</Text>
           <TextInput
@@ -112,6 +156,20 @@ export default function AddUserScreen() {
 
           />
         </View>
+
+        {initialBalance ? (
+          <View style={styles.formGroup}>
+            <Text style={styles.label}>Concepto del Saldo Inicial</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Ej. Primer Saldo, pago numero 1..."
+              placeholderTextColor="#8E8E93"
+              value={balanceDescription}
+              onChangeText={setBalanceDescription}
+              autoCapitalize="sentences"
+            />
+          </View>
+        ) : null}
 
         <View style={styles.formGroup}>
           <Text style={styles.label}>Correo Electrónico</Text>
@@ -188,5 +246,36 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  typeSelector: {
+    flexDirection: 'row',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  typeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+  typeButtonActivePayment: {
+    backgroundColor: '#34C759',
+  },
+  typeButtonActiveDebt: {
+    backgroundColor: '#FF3B30',
+  },
+  typeButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#8E8E93',
+    marginLeft: 6,
+  },
+  typeButtonTextActive: {
+    color: 'white',
   },
 });

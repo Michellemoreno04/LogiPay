@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, InteractionManager } from 'react-native';
 import { FontAwesome6, Ionicons } from '@expo/vector-icons';
 import { Link, router } from 'expo-router';
 import { useAuth } from '../../authContext/authContext';
@@ -22,13 +22,16 @@ export default function HomeScreen() {
   useEffect(() => {
     const checkTour = async () => {
       if (!user) return;
+
       try {
         const hasSeenTour = await AsyncStorage.getItem(`hasSeenTour_${user.uid}`);
         if (hasSeenTour !== 'true') {
+
           setTimeout(() => {
             start();
             AsyncStorage.setItem(`hasSeenTour_${user.uid}`, 'true');
-          }, 500);
+          }, 1000);
+
         }
       } catch (error) {
         console.error('Error handling tour status:', error);
@@ -167,7 +170,7 @@ export default function HomeScreen() {
           stepKey="step-2"
           name="Resumen Financiero"
           description="Aquí puedes ver el total de tus finanzas."
-          order={1}
+          order={2}
           borderRadius={16}
         >
           <View style={styles.statsGrid}>
@@ -214,27 +217,27 @@ export default function HomeScreen() {
       />
 
 
+      <View style={styles.fabContainer} >
 
-      <TourZone
-        stepKey="step-1"
-        name="Agregar Cliente"
-        description="Aquí puedes agregar tus clientes."
-        order={2}
-        shape="circle"
-        style={styles.fabContainer}
-      >
-        <Link href="/add-user" asChild>
-          <TouchableOpacity style={styles.fabButton}>
+        <TourZone
+          stepKey="step-1"
+          name="Agregar Cliente"
+          description="Aquí puedes agregar tus clientes."
+          order={1}
+          shape="circle"
+          borderRadius={16}
+        >
+          <TouchableOpacity style={styles.fabButton} onPress={() => router.push('/add-user')}>
             <FontAwesome6 name="user-plus" size={24} color="white" />
           </TouchableOpacity>
-        </Link>
-      </TourZone>
+        </TourZone>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F2F2F7', marginTop: 30 },
+  container: { flex: 1, backgroundColor: '#F2F2F7' },
   header: {
     paddingHorizontal: 20,
     paddingTop: 40,
@@ -313,7 +316,7 @@ const styles = StyleSheet.create({
   },
   fabContainer: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 20,
     right: 30,
   },
   fabButton: {
