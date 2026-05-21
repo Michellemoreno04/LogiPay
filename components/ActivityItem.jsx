@@ -26,22 +26,35 @@ const numberFormatter = new Intl.NumberFormat('en-US', {
 });
 
 export default function ActivityItem({ item }) {
+  const isPayment = item.type === 'payment';
+
   return (
     <TouchableOpacity
       style={styles.activityItem}
-      activeOpacity={0.7}
+      activeOpacity={0.65}
       onPress={() => item.clientId !== 'global' && router.push(`/${item.clientId}`)}
     >
+      {/* Left accent bar */}
+      <View
+        style={[
+          styles.accentBar,
+          { backgroundColor: isPayment ? '#34C759' : '#FF3B30' },
+        ]}
+      />
+
       <View style={[
         styles.activityIconBg,
-        { backgroundColor: item.type === 'payment' ? '#E8F9EE' : '#FDECEA' }
+        {
+          backgroundColor: isPayment ? '#ECFDF3' : '#FFF1F0',
+        }
       ]}>
         <Ionicons
-          name={item.type === 'payment' ? 'add-circle' : 'remove-circle'}
-          size={24}
-          color={item.type === 'payment' ? '#34C759' : '#FF3B30'}
+          name={isPayment ? 'arrow-down-circle' : 'arrow-up-circle'}
+          size={22}
+          color={isPayment ? '#34C759' : '#FF3B30'}
         />
       </View>
+
       <View style={styles.activityInfo}>
         <Text style={styles.activityText} numberOfLines={1}>
           {item.clientName}
@@ -49,14 +62,31 @@ export default function ActivityItem({ item }) {
         <Text style={styles.activityDescription} numberOfLines={1}>
           {item.description}
         </Text>
-        <Text style={styles.activityTime}>{timeAgo(item._date)}</Text>
+        <View style={styles.timeRow}>
+          <Ionicons name="time-outline" size={11} color="#AEAEB2" />
+          <Text style={styles.activityTime}>{timeAgo(item._date)}</Text>
+        </View>
       </View>
-      <Text style={[
-        styles.activityAmount,
-        { color: item.type === 'payment' ? '#34C759' : '#FF3B30' }
-      ]}>
-        {item.type === 'payment' ? '+' : '-'}${numberFormatter.format(item.amount) || '0.00'}
-      </Text>
+
+      <View style={styles.amountContainer}>
+        <Text style={[
+          styles.activityAmount,
+          { color: isPayment ? '#34C759' : '#FF3B30' }
+        ]}>
+          {isPayment ? '+' : '-'}${numberFormatter.format(item.amount) || '0.00'}
+        </Text>
+        <View style={[
+          styles.typeBadge,
+          { backgroundColor: isPayment ? '#ECFDF3' : '#FFF1F0' },
+        ]}>
+          <Text style={[
+            styles.typeText,
+            { color: isPayment ? '#34C759' : '#FF3B30' },
+          ]}>
+            {isPayment ? 'Abono' : 'Cargo'}
+          </Text>
+        </View>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -65,26 +95,76 @@ const styles = StyleSheet.create({
   activityItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'white',
-    padding: 15,
-    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    borderRadius: 16,
     marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowColor: '#4C669F',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowRadius: 8,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  accentBar: {
+    position: 'absolute',
+    left: 0,
+    top: 10,
+    bottom: 10,
+    width: 3,
+    borderRadius: 2,
   },
   activityIconBg: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  activityInfo: { flex: 1, marginLeft: 12 },
-  activityText: { fontSize: 16, fontWeight: '600', color: '#1C1C1E' },
-  activityDescription: { fontSize: 13, color: '#636366', marginTop: 2 },
-  activityTime: { fontSize: 12, color: '#8E8E93', marginTop: 2 },
-  activityAmount: { fontSize: 16, fontWeight: 'bold' },
+  activityInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  activityText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A1F4B',
+    letterSpacing: -0.2,
+  },
+  activityDescription: {
+    fontSize: 13,
+    color: '#636366',
+    marginTop: 2,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 4,
+  },
+  activityTime: {
+    fontSize: 11,
+    color: '#AEAEB2',
+    fontWeight: '500',
+  },
+  amountContainer: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  activityAmount: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  typeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  typeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
 });

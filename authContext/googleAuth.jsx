@@ -94,10 +94,12 @@ export const useGoogleAuth = () => {
             Alert.alert("Error", `Google Play Services no está disponible. (${error.message || error.code})`);
             break;
           default:
-            Alert.alert("Error", `No se pudo iniciar sesión con Google: ${error.message || error.code || error}`);
+            const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+            Alert.alert("Error", `No se pudo iniciar sesión con Google: ${error.message || error.code || error}\n\nWeb Client ID: ${webClientId || 'No definido'}`);
         }
       } else {
-        Alert.alert("Error", `Ocurrió un problema inesperado al iniciar sesión: ${error.message || error}`);
+        const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
+        Alert.alert("Error", `Ocurrió un problema inesperado al iniciar sesión: ${error.message || error}\n\nWeb Client ID: ${webClientId || 'No definido'}`);
       }
     } finally {
       setIsAuthenticating(false);
