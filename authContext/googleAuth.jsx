@@ -1,42 +1,33 @@
-import { useEffect, useState } from 'react';
 import {
   GoogleSignin,
   isErrorWithCode,
   statusCodes,
 } from '@react-native-google-signin/google-signin';
+import { useRouter } from 'expo-router';
 import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { useState } from 'react';
+import { Alert } from 'react-native';
 import { auth, db } from '../firebaseConfig/config';
 import { useAuth } from './authContext';
-import { Alert } from 'react-native';
-import { useRouter } from 'expo-router';
 
 export const useGoogleAuth = () => {
   const { businessType, businessName } = useAuth();
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const [isReady, setIsReady] = useState(false);
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    const initGoogle = async () => {
-      try {
-        await GoogleSignin.configure({
-          webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-          iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-        });
-        setIsReady(true);
-      } catch (error) {
-        console.error("Error configuring Google Sign-In:", error);
-      }
-    };
-    initGoogle();
-  }, []);
+  GoogleSignin.configure({
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+  });
+
 
   const handleGoogleLogin = async () => {
-    if (isAuthenticating || !isReady) return;
-    setIsAuthenticating(true);
+    if (loading) return;
+    setLoading(true);
+
     try {
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      await GoogleSignin.hasPlayServices();
 
       // Cerramos sesión previa para forzar el selector de cuentas
       try {
@@ -91,20 +82,19 @@ export const useGoogleAuth = () => {
             Alert.alert("Error", `Inicio de sesión ya está en progreso. (${error.message || error.code})`);
             break;
           case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
-            Alert.alert("Error", `Google Play Services no está disponible. (${error.message || error.code})`);
+            Alert.alert("Error", `Google Play Services no está disponible.`);
             break;
           default:
-            const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-            Alert.alert("Error", `No se pudo iniciar sesión con Google: ${error.message || error.code || error}\n\nWeb Client ID: ${webClientId || 'No definido'}`);
+            Alert.alert("Error", `No se pudo iniciar sesión con Google: ${error.message || error.code || error}`);
         }
       } else {
-        const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-        Alert.alert("Error", `Ocurrió un problema inesperado al iniciar sesión: ${error.message || error}\n\nWeb Client ID: ${webClientId || 'No definido'}`);
+
+        Alert.alert("Error", `Ocurrió un problema inesperado al iniciar sesiónintenta de nuevo mas tarde`);
       }
     } finally {
-      setIsAuthenticating(false);
+      setLoading(false);
     }
   };
 
-  return { handleGoogleLogin, request: isReady, isAuthenticating };
+  return { handleGoogleLogin, loading };
 };

@@ -7,7 +7,8 @@ import {
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { useEffect } from "react";
 import * as Updates from 'expo-updates';
-import { Alert, StatusBar } from 'react-native';
+import { Alert, StatusBar, Platform } from 'react-native';
+import * as NavigationBar from 'expo-navigation-bar';
 
 // Desactiva el modo estricto de Reanimated para suprimir las advertencias de react-native-lumen
 configureReanimatedLogger({
@@ -55,6 +56,15 @@ function RootLayoutNav() {
     }
   }, []);
 
+  // Esconder la barra de navegación nativa de Android
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      NavigationBar.setPositionAsync('absolute');
+      NavigationBar.setVisibilityAsync('hidden');
+      NavigationBar.setBehaviorAsync('overlay-swipe');
+    }
+  }, []);
+
   useEffect(() => {
     if (loading) return;
 
@@ -80,6 +90,7 @@ function RootLayoutNav() {
         }}
       >
         <Stack.Screen name="welcome" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="business-type" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="loginScreen" options={{ headerShown: false }} />

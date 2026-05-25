@@ -1,174 +1,114 @@
-import React, { useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Pressable,
-  Dimensions,
-  ScrollView,
-} from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import React from 'react';
+import {
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  withDelay,
-  Easing,
+  FadeInDown,
+  FadeInUp,
 } from 'react-native-reanimated';
 
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
-
-const BENEFITS = [
-  {
-    icon: 'wallet-outline',
-    color: '#4C669F',
-    bg: '#EEF2FF',
-    title: 'Control Total',
-    desc: 'Gestiona ingresos, deudas y pagos en un solo lugar con visión en tiempo real.',
-  },
-  {
-    icon: 'people-outline',
-    color: '#7C3AED',
-    bg: '#F5F0FF',
-    title: 'Clientes Organizados',
-    desc: 'Mantén un registro claro de cada cliente, su historial y saldo pendiente.',
-  },
-  {
-    icon: 'shield-checkmark-outline',
-    color: '#059669',
-    bg: '#ECFDF5',
-    title: 'Seguro y Confiable',
-    desc: 'Tus datos están protegidos con autenticación segura y respaldo en la nube.',
-  },
-  {
-    icon: 'bar-chart-outline',
-    color: '#D97706',
-    bg: '#FFFBEB',
-    title: 'Reportes Claros',
-    desc: 'Visualiza el desempeño de tu negocio con resúmenes financieros detallados.',
-  },
-  {
-    icon: 'flash-outline',
-    color: '#DC2626',
-    bg: '#FFF1F1',
-    title: 'Rápido y Sencillo',
-    desc: 'Interfaz intuitiva diseñada para que registres operaciones en segundos.',
-  },
-];
-
-// ─── Benefit Card ────────────────────────────────────────────────────────────
-function BenefitCard({ item, index }) {
-  const translateY = useSharedValue(60);
-  const opacity = useSharedValue(0);
-  const scale = useSharedValue(0.85);
-
-  React.useEffect(() => {
-    const delay = index * 90;
-    translateY.value = withDelay(delay, withSpring(0, { damping: 14, stiffness: 120 }));
-    opacity.value = withDelay(delay, withTiming(1, { duration: 350 }));
-    scale.value = withDelay(delay, withSpring(1, { damping: 14, stiffness: 120 }));
-  }, []);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }, { scale: scale.value }],
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Animated.View style={[styles.card, animStyle]}>
-      <View style={[styles.cardIcon, { backgroundColor: item.bg }]}>
-        <Ionicons name={item.icon} size={28} color={item.color} />
-      </View>
-      <View style={styles.cardText}>
-        <Text style={styles.cardTitle}>{item.title}</Text>
-        <Text style={styles.cardDesc}>{item.desc}</Text>
-      </View>
-    </Animated.View>
-  );
-}
-
-// ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function WelcomeScreen() {
   const router = useRouter();
-  const [showBenefits, setShowBenefits] = useState(false);
-
-  // Sheet animation values
-  const sheetTranslateY = useSharedValue(SCREEN_HEIGHT);
-  const backdropOpacity = useSharedValue(0);
-
-  // Hero scale-down when sheet opens
-  const heroScale = useSharedValue(1);
-  const heroOpacity = useSharedValue(1);
-
-  // Open handler (JS thread — no worklet needed)
-  const openBenefits = useCallback(() => {
-
-    heroScale.value = withTiming(0.9, { duration: 350, easing: Easing.out(Easing.cubic) });
-    heroOpacity.value = withTiming(0.4, { duration: 350 });
-    backdropOpacity.value = withTiming(1, { duration: 400 });
-    sheetTranslateY.value = withSpring(0, {
-      damping: 22,
-      stiffness: 140,
-      mass: 0.9,
-    });
-    setShowBenefits(true);
-  }, []);
-
-  // Close handler (JS thread — no worklet needed)
-  const closeBenefits = useCallback(() => {
-    sheetTranslateY.value = withSpring(SCREEN_HEIGHT, { damping: 20, stiffness: 160 });
-    backdropOpacity.value = withTiming(0, { duration: 300 });
-    heroScale.value = withTiming(1, { duration: 350 });
-    heroOpacity.value = withTiming(1, { duration: 350 });
-    setShowBenefits(false);
-  }, []);
-
-  const handleContinue = useCallback(() => {
-    closeBenefits();
-    setTimeout(() => router.push('/loginScreen'), 350);
-  }, []);
-
-  // Animated styles
-  const sheetStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: sheetTranslateY.value }],
-  }));
-
-  const backdropStyle = useAnimatedStyle(() => ({
-    opacity: backdropOpacity.value,
-  }));
-
-  const heroStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: heroScale.value }],
-    opacity: heroOpacity.value,
-  }));
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+
+      {/* ── Decorative Background ── */}
+      <View style={styles.bgDecoration}>
+        <LinearGradient
+          colors={['#E8EEFF', '#F0F2F8', '#F8F9FA']}
+          style={styles.bgGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+        <View style={styles.bgCircle1} />
+        <View style={styles.bgCircle2} />
+        <View style={styles.bgCircle3} />
+      </View>
+
       {/* ── Hero ── */}
-      <Animated.View style={[styles.content, heroStyle]}>
-        <View style={styles.iconContainer}>
-          <Ionicons name="wallet" size={80} color="#4C669F" />
-        </View>
-        <Text style={styles.title}>Bienvenido a LogiPay</Text>
-        <Text style={styles.subtitle}>
+      <View style={styles.content}>
+        <Animated.View
+          entering={FadeInDown.delay(200).duration(600)}
+          style={styles.iconContainer}
+        >
+          <LinearGradient
+            colors={['#4C669F', '#3B5998', '#35519fff']}
+            style={styles.iconGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Ionicons name="wallet" size={56} color="white" />
+          </LinearGradient>
+          {/* Glowing ring */}
+          <View style={styles.glowRing} />
+        </Animated.View>
+
+        <Animated.Text
+          entering={FadeInUp.delay(400).duration(600)}
+          style={styles.title}
+        >
+          Bienvenido a{'\n'}
+          <Text style={styles.titleAccent}>LogiPay</Text>
+        </Animated.Text>
+
+        <Animated.Text
+          entering={FadeInUp.delay(550).duration(600)}
+          style={styles.subtitle}
+        >
           Tu solución ideal para gestionar pagos, registrar deudas y mantener el control
-          financiero de tu negocio u organización de manera sencilla y segura.
-        </Text>
-      </Animated.View>
+          financiero de tu negocio u organización.
+        </Animated.Text>
+
+        {/* Mini feature pills */}
+        <Animated.View
+          entering={FadeInUp.delay(700).duration(500)}
+          style={styles.featurePills}
+        >
+          {['Pagos', 'Clientes', 'Reportes'].map((label, i) => (
+            <View key={label} style={styles.pill}>
+              <Ionicons
+                name={['card-outline', 'people-outline', 'stats-chart-outline'][i]}
+                size={14}
+                color="#4C669F"
+              />
+              <Text style={styles.pillText}>{label}</Text>
+            </View>
+          ))}
+        </Animated.View>
+      </View>
 
       {/* ── Footer Buttons ── */}
-      <View style={styles.footer}>
+      <Animated.View
+        entering={FadeInUp.delay(800).duration(500)}
+        style={styles.footer}
+      >
         <TouchableOpacity
-          style={styles.button}
           activeOpacity={0.85}
-          onPress={openBenefits}
+          onPress={() => router.push('/onboarding')}
         >
-          <Text style={styles.buttonText}>Comenzar</Text>
-          <Ionicons name="arrow-forward" size={20} color="white" style={styles.buttonIcon} />
+          <LinearGradient
+            colors={['#4C669F', '#3B5998', '#192f6a']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.button}
+          >
+            <Text style={styles.buttonText}>Comenzar</Text>
+            <View style={styles.buttonArrow}>
+              <Ionicons name="arrow-forward" size={18} color="#4C669F" />
+            </View>
+          </LinearGradient>
         </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.buttonLogin}
           activeOpacity={0.8}
@@ -176,47 +116,6 @@ export default function WelcomeScreen() {
         >
           <Text style={styles.buttonTextLogin}>Ya tengo una cuenta</Text>
         </TouchableOpacity>
-      </View>
-
-      {/* ── Backdrop ── */}
-      <Animated.View style={[styles.backdrop, backdropStyle]} pointerEvents={showBenefits ? "auto" : "none"}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={closeBenefits} />
-      </Animated.View>
-
-      {/* ── Benefits Bottom Sheet ── */}
-      <Animated.View style={[styles.sheet, sheetStyle]}>
-        {/* Handle */}
-        <View style={styles.handle} />
-
-        {/* Header */}
-        <View style={styles.sheetHeader}>
-          <View>
-            <Text style={styles.sheetTitle}>¿Por qué LogiPay?</Text>
-            <Text style={styles.sheetSubtitle}>Todo lo que tu negocio necesita</Text>
-          </View>
-          <Pressable onPress={closeBenefits} style={styles.closeBtn}>
-            <Ionicons name="close" size={20} color="#636366" />
-          </Pressable>
-        </View>
-
-        {/* Benefit cards */}
-        <ScrollView
-          style={styles.scrollArea}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {showBenefits && BENEFITS.map((item, index) => (
-            <BenefitCard key={item.title} item={item} index={index} />
-          ))}
-        </ScrollView>
-
-        {/* CTA */}
-        <View style={styles.sheetFooter}>
-          <TouchableOpacity style={styles.ctaButton} onPress={handleContinue} activeOpacity={0.85}>
-            <Ionicons name="rocket-outline" size={20} color="white" />
-            <Text style={styles.ctaText}>¡Comenzar ahora!</Text>
-          </TouchableOpacity>
-        </View>
       </Animated.View>
     </View>
   );
@@ -229,6 +128,41 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
   },
 
+  // ── Background Decoration ──
+  bgDecoration: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  bgGradient: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  bgCircle1: {
+    position: 'absolute',
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: 'rgba(76, 102, 159, 0.06)',
+    top: -80,
+    right: -80,
+  },
+  bgCircle2: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(76, 102, 159, 0.04)',
+    bottom: 200,
+    left: -60,
+  },
+  bgCircle3: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(124, 58, 237, 0.04)',
+    top: 200,
+    left: 40,
+  },
+
   // ── Hero ──
   content: {
     flex: 1,
@@ -237,26 +171,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
   },
   iconContainer: {
-    width: 140,
-    height: 140,
-    backgroundColor: '#E8EDF2',
-    borderRadius: 70,
+    marginBottom: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 40,
-    shadowColor: '#4C669F',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
-    elevation: 8,
+  },
+  iconGradient: {
+    width: 120,
+    height: 120,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#192f6a',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  glowRing: {
+    position: 'absolute',
+    width: 150,
+    height: 150,
+    borderRadius: 45,
+    borderWidth: 2,
+    borderColor: 'rgba(76, 102, 159, 0.12)',
   },
   title: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#1C1C1E',
+    fontSize: 34,
+    fontWeight: '300',
+    color: '#1A1F4B',
     marginBottom: 16,
     textAlign: 'center',
-    letterSpacing: 0.5,
+    lineHeight: 42,
+  },
+  titleAccent: {
+    fontWeight: '900',
+    color: '#4C669F',
+    fontSize: 38,
   },
   subtitle: {
     fontSize: 16,
@@ -264,181 +214,77 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
     paddingHorizontal: 10,
+    marginBottom: 24,
+  },
+
+  // ── Feature Pills ──
+  featurePills: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(76, 102, 159, 0.08)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 102, 159, 0.12)',
+  },
+  pillText: {
+    fontSize: 13,
+    color: '#4C669F',
+    fontWeight: '600',
   },
 
   // ── Footer ──
   footer: {
-    padding: 30,
-    paddingBottom: 50,
+    padding: 24,
+    paddingBottom: Platform.OS === 'ios' ? 50 : 36,
   },
   button: {
-    backgroundColor: '#4C669F',
     flexDirection: 'row',
-    height: 56,
-    borderRadius: 28,
+    height: 58,
+    borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#4C669F',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 5,
+    gap: 12,
+    shadowColor: '#192f6a',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
   },
   buttonText: {
     color: 'white',
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
-  buttonIcon: { marginLeft: 10 },
-  buttonLogin: {
-    marginTop: 16,
-    height: 56,
-    borderRadius: 28,
-    borderColor: '#4C669F',
-    borderWidth: 2,
+  buttonArrow: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.95)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  buttonLogin: {
+    marginTop: 14,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(76, 102, 159, 0.06)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(76, 102, 159, 0.2)',
   },
   buttonTextLogin: {
     color: '#4C669F',
-    fontSize: 18,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
-
-  // ── Backdrop ──
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(10,10,30,0.55)',
-    zIndex: 10,
-  },
-
-  // ── Sheet ──
-  sheet: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: SCREEN_HEIGHT * 0.88,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    zIndex: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    elevation: 20,
-  },
-  handle: {
-    width: 44,
-    height: 5,
-    backgroundColor: '#E0E0E0',
-    borderRadius: 3,
-    alignSelf: 'center',
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  sheetHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 8,
-  },
-  sheetTitle: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#1C1C1E',
-    letterSpacing: 0.3,
-  },
-  sheetSubtitle: {
-    fontSize: 14,
-    color: '#636366',
-    marginTop: 2,
-  },
-  closeBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#F2F2F7',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-
-  // ── Scroll ──
-  scrollArea: { flex: 1 },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 16,
-    gap: 12,
-  },
-
-  // ── Card ──
-  card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FAFAFA',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#F0F0F5',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  cardIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-    flexShrink: 0,
-  },
-  cardText: { flex: 1 },
-  cardTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1C1C1E',
-    marginBottom: 4,
-  },
-  cardDesc: {
-    fontSize: 13,
-    color: '#636366',
-    lineHeight: 19,
-  },
-
-  // ── Sheet Footer ──
-  sheetFooter: {
-    paddingHorizontal: 20,
-    paddingBottom: 36,
-    paddingTop: 8,
-  },
-  ctaButton: {
-    backgroundColor: '#4C669F',
-    flexDirection: 'row',
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    shadowColor: '#4C669F',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  ctaText: {
-    color: 'white',
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
 });

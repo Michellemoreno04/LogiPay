@@ -1,23 +1,23 @@
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Dimensions,
-  StatusBar,
-  Linking,
-  ActivityIndicator,
-  Platform,
-} from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import {
+  ActivityIndicator,
+  Dimensions,
+  Linking,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Animated, {
   FadeInDown,
   FadeInUp,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useGoogleAuth } from '../authContext/googleAuth';
 import { useAppleAuth } from '../authContext/appleAuth';
+import { useGoogleAuth } from '../authContext/googleAuth';
 
 
 
@@ -25,7 +25,7 @@ const { width } = Dimensions.get('window');
 
 export default function LoginSelectionScreen() {
   const router = useRouter();
-  const { handleGoogleLogin, request, isAuthenticating } = useGoogleAuth();
+  const { handleGoogleLogin, loading } = useGoogleAuth();
   const { handleAppleLogin, isAuthenticating: isAppleAuthenticating } = useAppleAuth();
 
   const handleGmailLogin = () => {
@@ -79,6 +79,27 @@ export default function LoginSelectionScreen() {
 
         {/* Buttons Container */}
         <View style={styles.buttonContainer}>
+          <Animated.View entering={FadeInUp.delay(800).duration(800)}>
+            <TouchableOpacity
+              style={[styles.googleButton, (loading) && { opacity: 0.5 }]}
+              onPress={handleGoogleLogin}
+              activeOpacity={0.8}
+              disabled={loading}
+            >
+              {
+                loading ? (
+                  <ActivityIndicator color="#4C669F" />
+                ) : (
+                  <>
+                    <View style={styles.googleIconWrapper}>
+                      <Ionicons name="logo-google" size={22} color="#3742dbff" />
+                    </View>
+                    <Text style={styles.googleButtonText}>Iniciar Sesión con Google</Text>
+                  </>
+                )
+              }
+            </TouchableOpacity>
+          </Animated.View>
           <Animated.View entering={FadeInUp.delay(600).duration(800)}>
             <TouchableOpacity
               style={styles.gmailButton}
@@ -92,27 +113,6 @@ export default function LoginSelectionScreen() {
             </TouchableOpacity>
           </Animated.View>
 
-          <Animated.View entering={FadeInUp.delay(800).duration(800)}>
-            <TouchableOpacity
-              style={[styles.googleButton, (!request || isAuthenticating) && { opacity: 0.5 }]}
-              onPress={handleGoogleLogin}
-              activeOpacity={0.8}
-              disabled={!request || isAuthenticating}
-            >
-              {
-                (!request || isAuthenticating) ? (
-                  <ActivityIndicator color="#4C669F" />
-                ) : (
-                  <>
-                    <View style={styles.googleIconWrapper}>
-                      <Ionicons name="logo-google" size={22} color="#3742dbff" />
-                    </View>
-                    <Text style={styles.googleButtonText}>Iniciar Sesión con Google</Text>
-                  </>
-                )
-              }
-            </TouchableOpacity>
-          </Animated.View>
 
           {Platform.OS === 'ios' && (
             <Animated.View entering={FadeInUp.delay(1000).duration(800)}>
@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
+    elevation: 2,
   },
   illustrationContainer: {
     marginBottom: 40,
@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.15,
     shadowRadius: 20,
-    elevation: 10,
+    elevation: 4,
   },
   textContainer: {
     alignItems: 'center',
@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
     shadowRadius: 10,
-    elevation: 5,
+    elevation: 3,
   },
   gmailButtonText: {
     color: 'white',
@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: 1,
   },
   googleButtonText: {
     color: '#1C1C1E',
@@ -267,7 +267,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
-    elevation: 2,
+    elevation: 1,
   },
   appleButtonText: {
     color: 'white',

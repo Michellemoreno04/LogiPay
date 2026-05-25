@@ -1,13 +1,13 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { Keyboard, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
 import { useAuth } from '../authContext/authContext';
 
 export default function BusinessSetupScreen() {
   const router = useRouter();
   const { user, saveBusinessType, saveBusinessName, updateUserData } = useAuth();
-  
+
   const [step, setStep] = useState(1);
   const [selectedType, setSelectedType] = useState(null);
   const [name, setName] = useState('');
@@ -65,7 +65,7 @@ export default function BusinessSetupScreen() {
             <View style={styles.cardContent}>
               <Text style={styles.cardTitle}>Organización</Text>
               <Text style={styles.cardDescription}>
-                Ideal para registrar pagos recurrentes o cuotas de una organización o club.
+                Ideal para registrar pagos recurrentes o cuotas de una organización.
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={24} color="#C7C7CC" />
