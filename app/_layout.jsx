@@ -1,14 +1,14 @@
+import * as NavigationBar from 'expo-navigation-bar';
 import { Stack, useRouter } from "expo-router";
-import AuthProvider, { useAuth } from "../authContext/authContext";
+import * as Updates from 'expo-updates';
+import { useEffect } from "react";
+import { Alert, Platform, StatusBar } from 'react-native';
 import {
-  TourProvider,
   SnappySpringConfig,
+  TourProvider,
 } from 'react-native-lumen';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
-import { useEffect } from "react";
-import * as Updates from 'expo-updates';
-import { Alert, StatusBar, Platform } from 'react-native';
-import * as NavigationBar from 'expo-navigation-bar';
+import AuthProvider, { useAuth } from "../authContext/authContext";
 
 // Desactiva el modo estricto de Reanimated para suprimir las advertencias de react-native-lumen
 configureReanimatedLogger({

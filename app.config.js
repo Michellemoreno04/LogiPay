@@ -1,8 +1,17 @@
-{
+import * as fs from 'fs';
+
+if (process.env.GOOGLE_SERVICES_JSON) {
+  fs.writeFileSync(
+    './google-services.json',
+    process.env.GOOGLE_SERVICES_JSON
+  );
+}
+
+export default {
   "expo": {
     "name": "LogiPay",
     "slug": "LogiPay",
-    "version": "1.1.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/ios-app-icon.png",
     "scheme": "logipay",
@@ -17,6 +26,7 @@
       }
     },
     "android": {
+      "googleServicesFile": process.env.GOOGLE_SERVICES_JSON ? "./google-services.json" : "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#72B5F5",
         "foregroundImage": "./assets/images/android-app-icon.png",
