@@ -11,7 +11,7 @@ export default {
   "expo": {
     "name": "LogiPay",
     "slug": "LogiPay",
-    "version": "1.0.1",
+    "version": "1.1.1",
     "orientation": "portrait",
     "icon": "./assets/images/ios-app-icon.png",
     "scheme": "logipay",
@@ -21,6 +21,7 @@ export default {
       "supportsTablet": true,
       "bundleIdentifier": "com.logipay.app",
       "usesAppleSignIn": true,
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
