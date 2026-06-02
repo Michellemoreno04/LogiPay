@@ -1,12 +1,3 @@
-import * as fs from 'fs';
-
-if (process.env.GOOGLE_SERVICES_JSON) {
-  fs.writeFileSync(
-    './google-services.json',
-    process.env.GOOGLE_SERVICES_JSON
-  );
-}
-
 export default {
   "expo": {
     "name": "LogiPay",
@@ -27,7 +18,7 @@ export default {
       }
     },
     "android": {
-      "googleServicesFile": process.env.GOOGLE_SERVICES_JSON ? "./google-services.json" : "./google-services.json",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#72B5F5",
         "foregroundImage": "./assets/images/android-app-icon.png",
