@@ -9,6 +9,7 @@ import {
 } from 'react-native-lumen';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import AuthProvider, { useAuth } from "../authContext/authContext";
+import { LocalDataProvider } from "../context/LocalDataContext";
 
 // Desactiva el modo estricto de Reanimated para suprimir las advertencias de react-native-lumen
 configureReanimatedLogger({
@@ -107,15 +108,21 @@ function RootLayoutNav() {
   );
 }
 
+import { AlertProvider } from '../context/AlertContext';
+
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <TourProvider
-        stepsOrder={['step-1', 'step-2']}
-        config={{ springConfig: SnappySpringConfig, enableGlow: true }}
-      >
-        <RootLayoutNav />
-      </TourProvider>
+      <LocalDataProvider>
+        <AlertProvider>
+          <TourProvider
+            stepsOrder={['step-1', 'step-2']}
+            config={{ springConfig: SnappySpringConfig, enableGlow: true }}
+          >
+            <RootLayoutNav />
+          </TourProvider>
+        </AlertProvider>
+      </LocalDataProvider>
     </AuthProvider>
   );
 }

@@ -1,34 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
 import { Link } from 'expo-router';
 import { FontAwesome6, Ionicons } from '@expo/vector-icons';
-import { collection, query, onSnapshot } from 'firebase/firestore';
-import { db } from '../../firebaseConfig/config';
-import { useAuth } from '../../authContext/authContext';
+import { useLocalData } from '../../context/LocalDataContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 
 
 
 export default function UsersScreen() {
-  const { user } = useAuth();
+  const { clients } = useLocalData();
   const [searchQuery, setSearchQuery] = useState('');
-  const [clients, setClients] = useState([]);
-
-  useEffect(() => {
-    if (!user) return;
-
-    const q = query(collection(db, 'users', user.uid, 'clients'));
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const clientsData = [];
-      querySnapshot.forEach((doc) => {
-        clientsData.push({ id: doc.id, ...doc.data() });
-      });
-      setClients(clientsData);
-    });
-
-    return () => unsubscribe();
-  }, [user]);
 
   const filteredUsers = clients.filter(client =>
     (client.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||

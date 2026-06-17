@@ -47,29 +47,36 @@ export default function AdjustModal({ visible, onClose, userData, user }) {
         return;
       }
 
-      const userRef = doc(db, 'users', user.uid);
-      const txRef = collection(db, 'users', user.uid, 'transactions');
+      const { addToOutbox } = require('../utils/database');
+      const { syncOutbox } = require('../utils/syncEngine');
 
       const adjustType = difference > 0 ? 'debt' : 'payment';
       const absDiff = Math.abs(difference);
 
-      await addDoc(txRef, {
+      const txRef = collection(db, 'users', user.uid, 'transactions');
+      const newTxRef = doc(txRef);
+
+      await addToOutbox(`users/${user.uid}/transactions`, newTxRef.id, {
         type: adjustType,
         amount: absDiff,
         description: `Ajuste: ${adjustNote.trim()} (Total anterior: $${currentTotal.toFixed(2)})`,
-        createdAt: serverTimestamp(),
-      });
+        createdAt: "SERVER_TIMESTAMP",
+      }, 'set');
 
       if (adjustType === 'payment') {
-        await updateDoc(userRef, {
-          totalPayment: increment(absDiff),
-        });
+        await addToOutbox('users', user.uid, {
+          totalPayment: "INCREMENT_" + absDiff,
+        }, 'update');
       } else {
-        await updateDoc(userRef, {
-          totalDebt: increment(absDiff),
-        });
+        await addToOutbox('users', user.uid, {
+          totalDebt: "INCREMENT_" + absDiff,
+        }, 'update');
       }
 
+      syncOutbox();
+      const { DeviceEventEmitter } = require('react-native');
+      DeviceEventEmitter.emit('local-db-changed');
+      
       onClose();
     } catch (error) {
       console.error('Error saving adjustment:', error);

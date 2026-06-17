@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform }
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useAuth } from '../authContext/authContext';
+import { useLocalData } from '../context/LocalDataContext';
 import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '../firebaseConfig/config';
 import { useEffect, useState } from 'react';
@@ -27,25 +28,47 @@ function timeAgo(date) {
 
 export default function AllTransactionsScreen() {
   const { user } = useAuth();
+  const { pendingOpsRef } = useLocalData();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState([]);
 
+  const { getCache, setCache } = require('../utils/database');
+  const { syncOutbox } = require('../utils/syncEngine');
+
   // 1. Fetch all clients first
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'users', user.uid, 'clients'));
-    const unsubscribe = onSnapshot(q, (snap) => {
-      const data = [];
-      snap.forEach((doc) => data.push({ id: doc.id, ...doc.data() }));
-      setClients(data);
-    });
-    return () => unsubscribe();
+    let isMounted = true;
+    let unsubscribe = null;
+
+    const init = async () => {
+      syncOutbox();
+      const cached = await getCache(`clients_${user.uid}`);
+      if (cached && isMounted) setClients(cached);
+
+      const q = query(collection(db, 'users', user.uid, 'clients'));
+      unsubscribe = onSnapshot(q, (snap) => {
+        const data = [];
+        snap.forEach((doc) => data.push({ id: doc.id, ...doc.data() }));
+        if (isMounted) {
+          setClients(data);
+          setCache(`clients_${user.uid}`, data);
+        }
+      });
+    };
+    init();
+    return () => {
+      isMounted = false;
+      if (unsubscribe) unsubscribe();
+    };
   }, [user]);
 
   // 2. Listen to all transactions for all clients + global
   useEffect(() => {
     if (!user) return;
+    let isMounted = true;
+
     if (clients.length === 0) {
       // Still might have global transactions
     }
@@ -53,67 +76,106 @@ export default function AllTransactionsScreen() {
     const unsubscribes = [];
     const txByClient = {};
 
-    const updateMerged = () => {
-      const merged = Object.values(txByClient).flat();
-      merged.sort((a, b) => b._timestamp - a._timestamp);
-      setTransactions(merged);
-      setLoading(false);
-    };
+    const initTransactions = async () => {
+      const cachedTxs = await getCache(`allTx_${user.uid}`);
+      if (cachedTxs && isMounted) {
+        const hydrated = cachedTxs.map(tx => ({
+          ...tx,
+          _date: tx._timestamp ? new Date(tx._timestamp) : null
+        }));
+        setTransactions(hydrated);
+        setLoading(false);
+      }
 
-    // Listen to each client's transactions
-    clients.forEach((client) => {
-      const txQ = query(
-        collection(db, 'users', user.uid, 'clients', client.id, 'transactions'),
+      const updateMerged = () => {
+        let merged = Object.values(txByClient).flat();
+
+        if (pendingOpsRef && pendingOpsRef.current) {
+          // 1. Remove deleted
+          merged = merged.filter(tx => !pendingOpsRef.current.deletedTxIds.has(tx.id));
+          // 2. Apply updates
+          merged = merged.map(tx => pendingOpsRef.current.updatedTxs[tx.id] || tx);
+          // 3. Apply adds
+          const existingIds = new Set(merged.map(tx => tx.id));
+          Object.values(pendingOpsRef.current.addedTxs).forEach(tx => {
+            if (!existingIds.has(tx.id)) {
+              merged.push(tx);
+            }
+          });
+        }
+
+        merged.sort((a, b) => b._timestamp - a._timestamp);
+        if (isMounted) {
+          setTransactions(merged.map(tx => ({ ...tx, _date: new Date(tx._timestamp) })));
+          setLoading(false);
+          setCache(`allTx_${user.uid}`, merged);
+        }
+      };
+
+      // Listen to each client's transactions
+      clients.forEach((client) => {
+        const txQ = query(
+          collection(db, 'users', user.uid, 'clients', client.id, 'transactions'),
+          orderBy('createdAt', 'desc')
+        );
+
+        const unsub = onSnapshot(txQ, (snap) => {
+          const txs = [];
+          snap.forEach((doc) => {
+            const data = doc.data();
+            txs.push({
+              id: doc.id,
+              ...data,
+              clientName: client.name || 'Sin nombre',
+              clientId: client.id,
+              _timestamp: data.createdAt?.toMillis?.() || 0,
+            });
+          });
+          txByClient[client.id] = txs;
+          updateMerged();
+        }, (error) => {
+          console.error('Error fetching transactions for client', client.id, error);
+        });
+        unsubscribes.push(unsub);
+      });
+
+      // Listen to global transactions (adjustments)
+      const globalTxQ = query(
+        collection(db, 'users', user.uid, 'transactions'),
         orderBy('createdAt', 'desc')
       );
-
-      const unsub = onSnapshot(txQ, (snap) => {
+      const globalUnsub = onSnapshot(globalTxQ, (snap) => {
         const txs = [];
-        snap.forEach((doc) => {
-          const data = doc.data();
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
           txs.push({
-            id: doc.id,
+            id: docSnap.id,
             ...data,
-            clientName: client.name || 'Sin nombre',
-            clientId: client.id,
+            clientName: 'Ajuste de Total',
+            clientId: 'global',
             _timestamp: data.createdAt?.toMillis?.() || 0,
-            _date: data.createdAt?.toDate?.() || null,
           });
         });
-        txByClient[client.id] = txs;
+        txByClient['global'] = txs;
         updateMerged();
       }, (error) => {
-        console.error('Error fetching transactions for client', client.id, error);
+        console.error('Error fetching global transactions', error);
       });
-      unsubscribes.push(unsub);
+      unsubscribes.push(globalUnsub);
+    };
+
+    initTransactions();
+
+    const { DeviceEventEmitter } = require('react-native');
+    const sub = DeviceEventEmitter.addListener('local-db-changed', () => {
+      initTransactions();
     });
 
-    // Listen to global transactions (adjustments)
-    const globalTxQ = query(
-      collection(db, 'users', user.uid, 'transactions'),
-      orderBy('createdAt', 'desc')
-    );
-    const globalUnsub = onSnapshot(globalTxQ, (snap) => {
-      const txs = [];
-      snap.forEach((docSnap) => {
-        const data = docSnap.data();
-        txs.push({
-          id: docSnap.id,
-          ...data,
-          clientName: 'Ajuste de Total',
-          clientId: 'global',
-          _timestamp: data.createdAt?.toMillis?.() || 0,
-          _date: data.createdAt?.toDate?.() || null,
-        });
-      });
-      txByClient['global'] = txs;
-      updateMerged();
-    }, (error) => {
-      console.error('Error fetching global transactions', error);
-    });
-    unsubscribes.push(globalUnsub);
-
-    return () => unsubscribes.forEach((fn) => fn());
+    return () => {
+      isMounted = false;
+      unsubscribes.forEach((fn) => fn());
+      sub.remove();
+    };
   }, [user, clients]);
 
   const renderItem = ({ item }) => (

@@ -1,13 +1,19 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { DeviceEventEmitter, View, Text, TextInput, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
-import { collection, doc, increment, serverTimestamp, writeBatch } from 'firebase/firestore';
+import { collection, doc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../firebaseConfig/config';
 import { useAuth } from '../authContext/authContext';
+import { useLocalData } from '../context/LocalDataContext';
+import { useAlert } from '../context/AlertContext';
+import { addToOutbox, getCache, setCache } from '../utils/database';
+import { syncOutbox } from '../utils/syncEngine';
 
 export default function AddUserScreen() {
-  const { user } = useAuth();
+  const { user, userData, updateLocalUserData } = useAuth();
+  const { addClientOptimistic } = useLocalData();
+  const { showAlert } = useAlert();
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -15,6 +21,8 @@ export default function AddUserScreen() {
   const [transactionType, setTransactionType] = useState('debt'); // 'payment' | 'debt'
   const [email, setEmail] = useState('');
   const [balanceDescription, setBalanceDescription] = useState('Saldo inicial');
+
+
 
   const handleSave = async () => {
     if (!user) {
@@ -24,7 +32,6 @@ export default function AddUserScreen() {
     setLoading(true);
     try {
       const parsedBalance = parseFloat(initialBalance.replace(/,/g, '')) || 0;
-      const batch = writeBatch(db);
 
       const clientsRef = collection(db, 'users', user.uid, 'clients');
       const newClientRef = doc(clientsRef);
@@ -33,44 +40,89 @@ export default function AddUserScreen() {
       // payment → balance goes UP (positive), debt → balance goes DOWN (negative)
       const balance = transactionType === 'payment' ? parsedBalance : -parsedBalance;
 
-      // 1. Create the client document
-      batch.set(newClientRef, {
+      // 1. Create the client document in outbox
+      await addToOutbox(`users/${user.uid}/clients`, clientId, {
         name,
         phone,
         email,
         balance: balance,
-        createdAt: serverTimestamp(),
-      });
+        createdAt: "SERVER_TIMESTAMP",
+      }, 'set');
 
       // 2. If there's an initial balance, record it and update totals
       if (parsedBalance > 0) {
-        const userRef = doc(db, 'users', user.uid);
         if (transactionType === 'payment') {
-          batch.update(userRef, {
-            totalPayment: increment(parsedBalance),
-          });
+          await addToOutbox('users', user.uid, {
+            totalPayment: "INCREMENT_" + parsedBalance,
+          }, 'update');
+          if (updateLocalUserData) {
+            updateLocalUserData({
+              totalPayment: (userData?.totalPayment || 0) + parsedBalance
+            });
+          }
         } else {
-          batch.update(userRef, {
-            totalDebt: increment(parsedBalance),
-          });
+          await addToOutbox('users', user.uid, {
+            totalDebt: "INCREMENT_" + parsedBalance,
+          }, 'update');
+          if (updateLocalUserData) {
+            updateLocalUserData({
+              totalDebt: (userData?.totalDebt || 0) + parsedBalance
+            });
+          }
         }
 
-        // Add the initial transaction to the client's history
+        // Agregar transacción inicial al historial del cliente
         const txRef = collection(db, 'users', user.uid, 'clients', clientId, 'transactions');
         const newTxRef = doc(txRef);
-        batch.set(newTxRef, {
+        const initialTxId = newTxRef.id; // Mismo ID para outbox y caché
+
+        await addToOutbox(`users/${user.uid}/clients/${clientId}/transactions`, initialTxId, {
           type: transactionType,
           amount: parsedBalance,
           description: balanceDescription.trim() || 'Saldo inicial',
-          createdAt: serverTimestamp(),
+          createdAt: "SERVER_TIMESTAMP",
+        }, 'set');
+
+        // Guardar en caché con el mismo ID que el outbox
+        const initialDate = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' });
+        await setCache(`clientTx_${clientId}_${user.uid}`, [{
+          id: initialTxId,
+          type: transactionType,
+          amount: parsedBalance,
+          description: balanceDescription.trim() || 'Saldo inicial',
+          date: initialDate,
+        }]);
+      } else {
+        await setCache(`clientTx_${clientId}_${user.uid}`, []);
+      }
+
+      // ─── Guardar caché individual del cliente ─────────────────────────────────
+      // Necesario para que [id].jsx lo encuentre al navegar sin internet
+      await setCache(`client_${clientId}_${user.uid}`, {
+        id: clientId, name, phone, email, balance, createdAt: Date.now(),
+      });
+
+      // ─── Actualizar contexto local (lista global + actividad reciente) ────────
+      if (addClientOptimistic) {
+        await addClientOptimistic({
+          clientId,
+          name,
+          phone,
+          email,
+          balance,
+          transactionType,
+          parsedBalance,
+          balanceDescription: balanceDescription.trim() || 'Saldo inicial'
         });
       }
 
-      await batch.commit();
+      DeviceEventEmitter.emit('local-db-changed');
+      syncOutbox(); // Intenta sincronizar si hay internet; si no, queda en el outbox
+      showAlert('Cliente guardado exitosamente', 'success');
       router.back();
     } catch (error) {
       console.error('Error saving user:', error);
-      Alert.alert('Error', 'No se pudo guardar el cliente.');
+      showAlert('No se pudo guardar el cliente.', 'error');
     } finally {
       setLoading(false);
     }

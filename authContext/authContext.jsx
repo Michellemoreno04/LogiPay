@@ -95,6 +95,10 @@ export default function AuthProvider({ children }) {
     }
   };
 
+  const updateLocalUserData = (newData) => {
+    setUserData((prev) => ({ ...prev, ...newData }));
+  };
+
   return (
     <AuthContext.Provider value={{
       user,
@@ -105,6 +109,7 @@ export default function AuthProvider({ children }) {
       saveBusinessType,
       saveBusinessName,
       updateUserData,
+      updateLocalUserData,
       logout
     }}>
       {children}

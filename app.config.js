@@ -34,6 +34,7 @@ export default {
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "expo-sqlite",
       "expo-router",
       [
         "expo-splash-screen",
