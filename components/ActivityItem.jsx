@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import React from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 // ─── Helper: relative time in Spanish ───
 function timeAgo(date) {
@@ -49,7 +49,7 @@ export default function ActivityItem({ item }) {
         }
       ]}>
         <Ionicons
-          name={isPayment ? 'arrow-down-circle' : 'arrow-up-circle'}
+          name={isPayment ? 'arrow-up-circle' : 'arrow-down-circle'}
           size={22}
           color={isPayment ? '#34C759' : '#FF3B30'}
         />

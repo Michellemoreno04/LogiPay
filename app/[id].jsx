@@ -1,17 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import {
-  collection,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-} from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   DeviceEventEmitter,
+  Dimensions,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -28,7 +23,13 @@ import { useAuth } from '../authContext/authContext';
 import { useAlert } from '../context/AlertContext';
 import { useLocalData } from '../context/LocalDataContext';
 import { db } from '../firebaseConfig/config';
-import { addToOutbox, getCache, setCache } from '../utils/database';
+import {
+  addTransaction,
+  deleteClient,
+  deleteTransaction,
+  editTransaction,
+} from '../utils/clientService';
+import { getCache, setCache } from '../utils/database';
 import { syncOutbox } from '../utils/syncEngine';
 
 
@@ -73,13 +74,22 @@ export default function UserDetailsScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [transactionType, setTransactionType] = useState('payment');
   const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('Pago');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [editingTransactionId, setEditingTransactionId] = useState(null);
   const [saving, setSaving] = useState(false);
 
   // ─── Estado del modal de opciones ────────────────────────────────────────
   const [optionsVisible, setOptionsVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // ─── Estado del modal de detalles de transacción y opciones ───────────────
+  const [detailsModalVisible, setDetailsModalVisible] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+
+  const [transactionOptionsVisible, setTransactionOptionsVisible] = useState(false);
+  const [selectedTxForOptions, setSelectedTxForOptions] = useState(null);
+  const [txMenuPosition, setTxMenuPosition] = useState({ x: 0, y: 0 });
 
 
   // ─── Carga del cliente con fallback offline en 3 capas ───────────────────
@@ -163,12 +173,16 @@ export default function UserDetailsScreen() {
     if (!user || !id) return;
     let isMounted = true;
     let unsubscribe = null;
+    let loadedFromCache = false;
 
     const loadTransactions = async () => {
       // Caché primero para respuesta inmediata
       const cached = await getCache(`clientTx_${id}_${user.uid}`);
       if (cached && isMounted) {
         setTransactions(cached);
+        if (cached.length > 0) {
+          loadedFromCache = true;
+        }
       }
 
       // Firestore en tiempo real
@@ -179,13 +193,22 @@ export default function UserDetailsScreen() {
         q,
         (snapshot) => {
           if (!isMounted) return;
-          const txData = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-            date: formatDate(doc.data().createdAt),
-          }));
-          setTransactions(txData);
-          setCache(`clientTx_${id}_${user.uid}`, txData); // Mantener caché fresco
+
+          if (!snapshot.empty) {
+            const txData = snapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+              date: formatDate(doc.data().createdAt),
+            }));
+            setTransactions(txData);
+            setCache(`clientTx_${id}_${user.uid}`, txData); // Mantener caché fresco
+            loadedFromCache = true;
+          } else if (!loadedFromCache) {
+            // Si el snapshot está vacío y no teníamos datos en caché, 
+            // entonces sí está vacío. Si teníamos datos (por transacciones offline), no los borramos.
+            setTransactions([]);
+            setCache(`clientTx_${id}_${user.uid}`, []);
+          }
         },
         (error) => {
           // Sin internet: ya tenemos datos del caché
@@ -207,7 +230,8 @@ export default function UserDetailsScreen() {
   const openModal = useCallback((type) => {
     setTransactionType(type);
     setAmount('');
-    setDescription(type === 'debt' ? 'Deuda' : 'Pago');
+    setTitle(type === 'debt' ? 'Deuda' : 'Pago');
+    setDescription('');
     setEditingTransactionId(null);
     setModalVisible(true);
   }, []);
@@ -216,7 +240,8 @@ export default function UserDetailsScreen() {
   const openEditModal = useCallback((transaction) => {
     setTransactionType(transaction.type);
     setAmount(transaction.amount.toString());
-    setDescription(transaction.description);
+    setTitle(transaction.title || transaction.description || '');
+    setDescription(transaction.description !== transaction.title ? (transaction.description || '') : '');
     setEditingTransactionId(transaction.id);
     setModalVisible(true);
   }, []);
@@ -226,7 +251,28 @@ export default function UserDetailsScreen() {
     setModalVisible(false);
     setEditingTransactionId(null);
     setAmount('');
+    setTitle('');
     setDescription('');
+  }, []);
+
+  // ─── Modales de detalles y opciones de transacción ────────────────────────
+  const openDetailsModal = useCallback((transaction) => {
+    setSelectedTransaction(transaction);
+    setDetailsModalVisible(true);
+  }, []);
+
+  const closeDetailsModal = useCallback(() => {
+    setDetailsModalVisible(false);
+    setSelectedTransaction(null);
+  }, []);
+
+  const openTransactionOptions = useCallback((transaction, event) => {
+    setSelectedTxForOptions(transaction);
+    if (event && event.nativeEvent) {
+      const { pageX, pageY } = event.nativeEvent;
+      setTxMenuPosition({ x: pageX, y: pageY });
+    }
+    setTransactionOptionsVisible(true);
   }, []);
 
 
@@ -237,8 +283,8 @@ export default function UserDetailsScreen() {
       Alert.alert('Error', 'Ingresa un monto válido.');
       return;
     }
-    if (!description.trim()) {
-      Alert.alert('Error', 'Ingresa una descripción.');
+    if (!title.trim()) {
+      Alert.alert('Error', 'Ingresa un título.');
       return;
     }
 
@@ -264,49 +310,26 @@ export default function UserDetailsScreen() {
 
   /** Lógica interna: agregar nueva transacción. */
   const _addTransaction = async (parsedAmount) => {
-    const txRef = collection(db, 'users', user.uid, 'clients', id, 'transactions');
-    const newTxRef = doc(txRef);
-    const txId = newTxRef.id;
-
-    // 1. Encolar en outbox para sincronizar cuando haya internet
-    await addToOutbox(
-      `users/${user.uid}/clients/${id}/transactions`,
-      txId,
-      { type: transactionType, amount: parsedAmount, description: description.trim(), createdAt: 'SERVER_TIMESTAMP' },
-      'set'
-    );
-
-    const balanceChange = transactionType === 'payment' ? parsedAmount : -parsedAmount;
-    await addToOutbox(`users/${user.uid}/clients`, id, { balance: `INCREMENT_${balanceChange}` }, 'update');
-
-    const totalField = transactionType === 'payment' ? 'totalPayment' : 'totalDebt';
-    await addToOutbox('users', user.uid, { [totalField]: `INCREMENT_${parsedAmount}` }, 'update');
-
-    // 2. Actualizar UI y caché local de forma optimista
-    const newTx = {
-      id: txId,
+    // El servicio encola en outbox y actualiza la caché SQLite
+    const { txId, balanceChange, totalField, newTx } = await addTransaction({
+      uid: user.uid,
+      clientId: id,
       type: transactionType,
       amount: parsedAmount,
+      title: title.trim(),
       description: description.trim(),
-      date: new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' }),
-    };
+    });
+
+    // Actualizar UI optimista
     setTransactions((prev) => [newTx, ...prev]);
     setClient((prev) => prev ? { ...prev, balance: (prev.balance || 0) + balanceChange } : prev);
 
-    // 3. Actualizar caché SQLite
-    const cachedClient = await getCache(`client_${id}_${user.uid}`);
-    if (cachedClient) {
-      await setCache(`client_${id}_${user.uid}`, { ...cachedClient, balance: (cachedClient.balance || 0) + balanceChange });
-    }
-    const cachedTxs = await getCache(`clientTx_${id}_${user.uid}`) || [];
-    await setCache(`clientTx_${id}_${user.uid}`, [newTx, ...cachedTxs]);
-
-    // 4. Actualizar totales locales del usuario
+    // Actualizar totales locales en memoria
     if (updateLocalUserData) {
       updateLocalUserData({ [totalField]: (userData?.[totalField] || 0) + parsedAmount });
     }
 
-    // 5. Reflejar en el contexto global (lista de clientes + actividad reciente)
+    // Reflejar en contexto global
     if (addTransactionOptimistic) {
       await addTransactionOptimistic({
         txId,
@@ -314,6 +337,7 @@ export default function UserDetailsScreen() {
         clientName: client?.name || 'Sin nombre',
         type: transactionType,
         amount: parsedAmount,
+        title: title.trim(),
         description: description.trim(),
       });
     }
@@ -324,63 +348,30 @@ export default function UserDetailsScreen() {
     const oldTx = transactions.find((t) => t.id === editingTransactionId);
     if (!oldTx) throw new Error('Transacción no encontrada');
 
-    // 1. Calcular diferencias de balance
-    const oldBalanceChange = oldTx.type === 'payment' ? -oldTx.amount : oldTx.amount;
-    const newBalanceChange = transactionType === 'payment' ? parsedAmount : -parsedAmount;
-    const netBalanceChange = oldBalanceChange + newBalanceChange;
+    // El servicio encola en outbox y actualiza la caché SQLite
+    const { netBalanceChange, paymentDiff, debtDiff } = await editTransaction({
+      uid: user.uid,
+      clientId: id,
+      txId: editingTransactionId,
+      oldType: oldTx.type,
+      oldAmount: oldTx.amount,
+      newType: transactionType,
+      newAmount: parsedAmount,
+      newTitle: title.trim(),
+      newDescription: description.trim(),
+    });
 
-    let paymentDiff = 0;
-    let debtDiff = 0;
-    if (oldTx.type === 'payment') paymentDiff -= oldTx.amount;
-    else debtDiff -= oldTx.amount;
-    if (transactionType === 'payment') paymentDiff += parsedAmount;
-    else debtDiff += parsedAmount;
-
-    // 2. Encolar en outbox
-    await addToOutbox(
-      `users/${user.uid}/clients/${id}/transactions`,
-      editingTransactionId,
-      { type: transactionType, amount: parsedAmount, description: description.trim() },
-      'update'
-    );
-    if (netBalanceChange !== 0) {
-      await addToOutbox(`users/${user.uid}/clients`, id, { balance: `INCREMENT_${netBalanceChange}` }, 'update');
-    }
-    const userUpdate = {};
-    if (paymentDiff !== 0) userUpdate.totalPayment = `INCREMENT_${paymentDiff}`;
-    if (debtDiff !== 0) userUpdate.totalDebt = `INCREMENT_${debtDiff}`;
-    if (Object.keys(userUpdate).length > 0) {
-      await addToOutbox('users', user.uid, userUpdate, 'update');
-    }
-
-    // 3. Actualizar UI optimista
+    // Actualizar UI optimista
     setTransactions((prev) =>
       prev.map((t) =>
         t.id === editingTransactionId
-          ? { ...t, type: transactionType, amount: parsedAmount, description: description.trim() }
+          ? { ...t, type: transactionType, amount: parsedAmount, title: title.trim(), description: description.trim() }
           : t
       )
     );
     setClient((prev) => prev ? { ...prev, balance: (prev.balance || 0) + netBalanceChange } : prev);
 
-    // 4. Actualizar caché SQLite
-    const cachedClient = await getCache(`client_${id}_${user.uid}`);
-    if (cachedClient) {
-      await setCache(`client_${id}_${user.uid}`, { ...cachedClient, balance: (cachedClient.balance || 0) + netBalanceChange });
-    }
-    const cachedTxs = await getCache(`clientTx_${id}_${user.uid}`);
-    if (cachedTxs) {
-      await setCache(
-        `clientTx_${id}_${user.uid}`,
-        cachedTxs.map((t) =>
-          t.id === editingTransactionId
-            ? { ...t, type: transactionType, amount: parsedAmount, description: description.trim() }
-            : t
-        )
-      );
-    }
-
-    // 5. Actualizar totales locales del usuario
+    // Actualizar totales locales en memoria
     if (updateLocalUserData) {
       const localUpdate = {};
       if (paymentDiff !== 0) localUpdate.totalPayment = (userData?.totalPayment || 0) + paymentDiff;
@@ -388,7 +379,7 @@ export default function UserDetailsScreen() {
       if (Object.keys(localUpdate).length > 0) updateLocalUserData(localUpdate);
     }
 
-    // 6. Reflejar en contexto global
+    // Reflejar en contexto global
     if (editTransactionOptimistic) {
       await editTransactionOptimistic({
         txId: editingTransactionId,
@@ -397,6 +388,7 @@ export default function UserDetailsScreen() {
         oldAmount: oldTx.amount,
         newType: transactionType,
         newAmount: parsedAmount,
+        newTitle: title.trim(),
         newDescription: description.trim(),
       });
     }
@@ -404,7 +396,7 @@ export default function UserDetailsScreen() {
 
 
   // ─── Eliminar transacción ─────────────────────────────────────────────────
-  const handleDeleteTransaction = () => {
+  const handleDeleteTransaction = (txIdToDel = editingTransactionId) => {
     Alert.alert(
       'Eliminar Transacción',
       '¿Estás seguro de que deseas eliminar esta transacción?',
@@ -416,40 +408,30 @@ export default function UserDetailsScreen() {
           onPress: async () => {
             setSaving(true);
             try {
-              const oldTx = transactions.find((t) => t.id === editingTransactionId);
+              const oldTx = transactions.find((t) => t.id === txIdToDel);
               if (!oldTx) return;
 
-              // Calcular reversión de balance
-              const oldBalanceChange = oldTx.type === 'payment' ? -oldTx.amount : oldTx.amount;
-              const totalField = oldTx.type === 'payment' ? 'totalPayment' : 'totalDebt';
-
-              // Encolar en outbox
-              await addToOutbox(`users/${user.uid}/clients/${id}/transactions`, editingTransactionId, null, 'delete');
-              await addToOutbox(`users/${user.uid}/clients`, id, { balance: `INCREMENT_${oldBalanceChange}` }, 'update');
-              await addToOutbox('users', user.uid, { [totalField]: `INCREMENT_${-oldTx.amount}` }, 'update');
+              // El servicio encola en outbox y actualiza la caché SQLite
+              const { balanceChange, totalField } = await deleteTransaction({
+                uid: user.uid,
+                clientId: id,
+                txId: txIdToDel,
+                type: oldTx.type,
+                amount: oldTx.amount,
+              });
 
               // Actualizar UI optimista
-              setTransactions((prev) => prev.filter((t) => t.id !== editingTransactionId));
-              setClient((prev) => prev ? { ...prev, balance: (prev.balance || 0) + oldBalanceChange } : prev);
+              setTransactions((prev) => prev.filter((t) => t.id !== txIdToDel));
+              setClient((prev) => prev ? { ...prev, balance: (prev.balance || 0) + balanceChange } : prev);
 
-              // Actualizar caché SQLite
-              const cachedClient = await getCache(`client_${id}_${user.uid}`);
-              if (cachedClient) {
-                await setCache(`client_${id}_${user.uid}`, { ...cachedClient, balance: (cachedClient.balance || 0) + oldBalanceChange });
-              }
-              const cachedTxs = await getCache(`clientTx_${id}_${user.uid}`);
-              if (cachedTxs) {
-                await setCache(`clientTx_${id}_${user.uid}`, cachedTxs.filter((t) => t.id !== editingTransactionId));
-              }
-
-              // Actualizar totales locales del usuario
+              // Actualizar totales locales en memoria
               if (updateLocalUserData) {
                 updateLocalUserData({ [totalField]: (userData?.[totalField] || 0) - oldTx.amount });
               }
 
               // Reflejar en contexto global
               if (deleteTransactionOptimistic) {
-                await deleteTransactionOptimistic({ txId: editingTransactionId, clientId: id, type: oldTx.type, amount: oldTx.amount });
+                await deleteTransactionOptimistic({ txId: txIdToDel, clientId: id, type: oldTx.type, amount: oldTx.amount });
               }
 
               syncOutbox();
@@ -483,33 +465,20 @@ export default function UserDetailsScreen() {
             setDeleting(true);
             setOptionsVisible(false);
             try {
-              // Calcular totales del cliente para revertir
-              let clientTotalDebt = 0;
-              let clientTotalPayment = 0;
-              transactions.forEach((tx) => {
-                if (tx.type === 'payment') clientTotalPayment += tx.amount;
-                else clientTotalDebt += tx.amount;
-                addToOutbox(`users/${user.uid}/clients/${id}/transactions`, tx.id, null, 'delete');
+              // El servicio encola en outbox, revierte totales y actualiza caché
+              const { totalPaymentReverted, totalDebtReverted } = await deleteClient({
+                uid: user.uid,
+                clientId: id,
+                transactions,
               });
 
-              // Revertir totales globales del usuario
-              await addToOutbox('users', user.uid, {
-                totalPayment: `INCREMENT_${-clientTotalPayment}`,
-                totalDebt: `INCREMENT_${-clientTotalDebt}`,
-              }, 'update');
+              // Actualizar totales locales en memoria
               if (updateLocalUserData) {
                 updateLocalUserData({
-                  totalPayment: (userData?.totalPayment || 0) - clientTotalPayment,
-                  totalDebt: (userData?.totalDebt || 0) - clientTotalDebt,
+                  totalPayment: (userData?.totalPayment || 0) - totalPaymentReverted,
+                  totalDebt: (userData?.totalDebt || 0) - totalDebtReverted,
                 });
               }
-
-              // Eliminar documento del cliente
-              await addToOutbox(`users/${user.uid}/clients`, id, null, 'delete');
-
-              // Actualizar caché de la lista general
-              const cachedClients = await getCache(`clients_${user.uid}`) || [];
-              await setCache(`clients_${user.uid}`, cachedClients.filter((c) => c.id !== id));
 
               // Reflejar en contexto global
               if (deleteClientOptimistic) {
@@ -535,7 +504,7 @@ export default function UserDetailsScreen() {
 
   // ─── Renderer de fila de transacción ─────────────────────────────────────
   const renderTransaction = ({ item }) => (
-    <TouchableOpacity style={styles.transactionCard} onPress={() => openEditModal(item)} activeOpacity={0.7}>
+    <TouchableOpacity style={styles.transactionCard} onPress={() => openDetailsModal(item)} activeOpacity={0.7}>
       <View style={styles.transactionIconContainer}>
         <View style={[styles.iconBg, { backgroundColor: item.type === 'payment' ? '#E8F9EE' : '#FDECEA' }]}>
           <Ionicons
@@ -546,12 +515,25 @@ export default function UserDetailsScreen() {
         </View>
       </View>
       <View style={styles.transactionInfo}>
-        <Text style={styles.transactionDescription}>{item.description}</Text>
+        <Text style={styles.transactionDescription}>{item.title || item.description}</Text>
+        {item.description && item.description !== item.title ? (
+          <Text style={styles.transactionSubDescription} numberOfLines={1}>{item.description}</Text>
+        ) : null}
         <Text style={styles.transactionDate}>{item.date}</Text>
+
       </View>
-      <Text style={[styles.transactionAmount, item.type === 'payment' ? styles.positiveBalance : styles.negativeBalance]}>
-        {item.type === 'payment' ? '+' : '-'}${formatCurrency(item.amount)}
-      </Text>
+      <View style={styles.transactionRightCol}>
+        <Text style={[styles.transactionAmount, item.type === 'payment' ? styles.positiveBalance : styles.negativeBalance]}>
+          {item.type === 'payment' ? '+' : '-'}${formatCurrency(item.amount)}
+        </Text>
+        <TouchableOpacity
+          style={styles.optionsIcon}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          onPress={(e) => { e.stopPropagation(); openTransactionOptions(item, e); }}
+        >
+          <Ionicons name="ellipsis-vertical" size={20} color="#8E8E93" />
+        </TouchableOpacity>
+      </View>
     </TouchableOpacity>
   );
 
@@ -671,11 +653,7 @@ export default function UserDetailsScreen() {
                     {editingTransactionId ? 'Editar Transacción' : (transactionType === 'payment' ? 'Abonar Pago' : 'Agregar Deuda')}
                   </Text>
                   <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                    {editingTransactionId ? (
-                      <TouchableOpacity onPress={handleDeleteTransaction}>
-                        <Ionicons name="trash-outline" size={24} color="#FF3B30" />
-                      </TouchableOpacity>
-                    ) : null}
+                    {/* Botón de eliminar movido a las opciones, pero lo mantenemos por si acaso */}
                   </View>
                 </View>
 
@@ -718,11 +696,21 @@ export default function UserDetailsScreen() {
                   />
                 </View>
 
-                {/* Descripción */}
+                {/* Título */}
                 <Text style={styles.inputLabel}>Título *</Text>
                 <TextInput
-                  style={styles.descriptionInput}
+                  style={styles.titleInput}
                   placeholder={transactionType === 'payment' ? 'Ej. Abono a cuenta...' : 'Ej. Préstamo de material...'}
+                  placeholderTextColor="#C7C7CC"
+                  value={title}
+                  onChangeText={setTitle}
+                />
+
+                {/* Descripción */}
+                <Text style={styles.inputLabel}>Descripción (Opcional)</Text>
+                <TextInput
+                  style={styles.descriptionInput}
+                  placeholder="Detalles adicionales..."
                   placeholderTextColor="#C7C7CC"
                   value={description}
                   onChangeText={setDescription}
@@ -733,7 +721,7 @@ export default function UserDetailsScreen() {
                 <TouchableOpacity
                   style={[
                     styles.saveButton,
-                    (!amount || !description.trim() || saving) && styles.saveButtonDisabled,
+                    (!amount || !title.trim() || saving) && styles.saveButtonDisabled,
                     transactionType === 'payment' ? styles.savePaymentTheme : styles.saveDebtTheme,
                   ]}
                   onPress={handleSaveTransaction}
@@ -760,7 +748,18 @@ export default function UserDetailsScreen() {
             <View style={styles.optionsContent}>
               <TouchableOpacity
                 style={styles.optionItem}
-                onPress={() => { setOptionsVisible(false); Alert.alert('Info', 'Funcionalidad de editar próximamente.'); }}
+                onPress={() => {
+                  setOptionsVisible(false);
+                  router.push({
+                    pathname: '/add-user',
+                    params: {
+                      clientId: client.id,
+                      name: client.name,
+                      phone: client.phone || '',
+                      email: client.email || '',
+                    },
+                  });
+                }}
               >
                 <Ionicons name="create-outline" size={22} color="#4C669F" />
                 <Text style={styles.optionText}>Editar cliente</Text>
@@ -771,6 +770,131 @@ export default function UserDetailsScreen() {
               <TouchableOpacity style={styles.optionItem} onPress={handleDeleteClient}>
                 <Ionicons name="trash-outline" size={22} color="#FF3B30" />
                 <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar cliente</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* ── Modal: Detalles de la transacción ── */}
+        <Modal
+          visible={detailsModalVisible}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={closeDetailsModal}
+        >
+          <TouchableOpacity style={styles.detailsOverlay} activeOpacity={1} onPress={closeDetailsModal}>
+            <TouchableOpacity activeOpacity={1} style={styles.detailsModalContent}>
+              {selectedTransaction && (
+                <>
+                  {/* Header con icono y título */}
+                  <View style={styles.detailsHeader}>
+                    <View style={[styles.iconBg, {
+                      backgroundColor: selectedTransaction.type === 'payment' ? '#E8F9EE' : '#FDECEA',
+                      marginRight: 12,
+                      width: 48, height: 48, borderRadius: 24,
+                    }]}>
+                      <Ionicons
+                        name={selectedTransaction.type === 'payment' ? 'arrow-down-circle' : 'arrow-up-circle'}
+                        size={30}
+                        color={selectedTransaction.type === 'payment' ? '#34C759' : '#FF3B30'}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.detailsTitle}>{selectedTransaction.title || selectedTransaction.description}</Text>
+                      <Text style={styles.detailsDate}>{selectedTransaction.date}</Text>
+                    </View>
+                  </View>
+
+                  {/* Nombre del cliente */}
+                  <View style={styles.detailsClientRow}>
+                    <Ionicons name="person-circle-outline" size={18} color="#4C669F" />
+                    <Text style={styles.detailsClientName}>{client?.name || 'Cliente'}</Text>
+                  </View>
+
+                  {/* Monto */}
+                  <View style={styles.detailsBody}>
+                    <Text style={styles.detailsLabel}>Monto</Text>
+                    <Text style={[styles.detailsAmount, selectedTransaction.type === 'payment' ? styles.positiveBalance : styles.negativeBalance]}>
+                      {selectedTransaction.type === 'payment' ? '+' : '-'}${formatCurrency(selectedTransaction.amount)}
+                    </Text>
+
+                    {/* Descripción (solo si existe y es diferente al título) */}
+                    {selectedTransaction.description && selectedTransaction.description !== selectedTransaction.title && (
+                      <>
+                        <Text style={[styles.detailsLabel, { marginTop: 16 }]}>Descripción</Text>
+                        <Text style={styles.detailsDescriptionText}>{selectedTransaction.description}</Text>
+                      </>
+                    )}
+                  </View>
+
+                  {/* Acciones: Editar | Cerrar */}
+                  <View style={styles.detailsActions}>
+                    <TouchableOpacity
+                      style={[styles.detailsActionBtn, styles.detailsEditBtn]}
+                      onPress={() => { closeDetailsModal(); openEditModal(selectedTransaction); }}
+                    >
+                      <Ionicons name="create-outline" size={18} color="#4C669F" />
+                      <Text style={[styles.detailsActionText, { color: '#4C669F' }]}>Editar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.detailsActionBtn, styles.detailsCloseButton]}
+                      onPress={closeDetailsModal}
+                    >
+                      <Text style={styles.detailsCloseText}>Cerrar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* ── Modal: Opciones de transacción ── */}
+        <Modal
+          visible={transactionOptionsVisible}
+          animationType="fade"
+          transparent={true}
+          onRequestClose={() => setTransactionOptionsVisible(false)}
+        >
+          <TouchableOpacity style={styles.txOptionsOverlay} activeOpacity={1} onPress={() => setTransactionOptionsVisible(false)}>
+            <View
+              style={[
+                styles.txOptionsContent,
+                {
+                  top: (() => {
+                    const { height: screenHeight } = Dimensions.get('window');
+                    const menuHeight = 110;
+                    let calculatedTop = txMenuPosition.y + menuHeight > screenHeight - 40
+                      ? txMenuPosition.y - menuHeight - 10
+                      : txMenuPosition.y + 10;
+                    return Math.max(20, calculatedTop);
+                  })(),
+                  right: 20,
+                },
+              ]}
+            >
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={() => {
+                  setTransactionOptionsVisible(false);
+                  if (selectedTxForOptions) openEditModal(selectedTxForOptions);
+                }}
+              >
+                <Ionicons name="create-outline" size={22} color="#4C669F" />
+                <Text style={styles.optionText}>Editar Transacción</Text>
+              </TouchableOpacity>
+
+              <View style={styles.optionDivider} />
+
+              <TouchableOpacity
+                style={styles.optionItem}
+                onPress={() => {
+                  setTransactionOptionsVisible(false);
+                  if (selectedTxForOptions) handleDeleteTransaction(selectedTxForOptions.id);
+                }}
+              >
+                <Ionicons name="trash-outline" size={22} color="#FF3B30" />
+                <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar Transacción</Text>
               </TouchableOpacity>
             </View>
           </TouchableOpacity>
@@ -960,18 +1084,35 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   transactionDescription: {
-    fontSize: 16,
-    fontWeight: '500',
+    fontSize: 15,
+    fontWeight: '600',
     color: '#1C1C1E',
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  transactionDate: {
+  transactionSubDescription: {
     fontSize: 13,
     color: '#8E8E93',
+    marginBottom: 2,
+  },
+  transactionDate: {
+    fontSize: 12,
+    color: '#AEAEB2',
+    marginBottom: 2,
+  },
+  transactionClient: {
+    fontSize: 12,
+    color: '#AEAEB2',
+  },
+  transactionRightCol: {
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    paddingLeft: 6,
   },
   transactionAmount: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
+    marginBottom: 6,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -1088,6 +1229,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#1C1C1E',
   },
+  titleInput: {
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 15,
+    fontSize: 16,
+    color: '#1C1C1E',
+    marginBottom: 20,
+  },
   descriptionInput: {
     backgroundColor: 'white',
     borderRadius: 10,
@@ -1129,7 +1278,23 @@ const styles = StyleSheet.create({
   optionsContent: {
     backgroundColor: 'white',
     borderRadius: 12,
-    width: 200,
+    width: 240,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+    overflow: 'hidden',
+  },
+  txOptionsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.15)',
+  },
+  txOptionsContent: {
+    position: 'absolute',
+    backgroundColor: 'white',
+    borderRadius: 12,
+    width: 240,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
@@ -1147,6 +1312,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1C1C1E',
     fontWeight: '500',
+
   },
   optionDivider: {
     height: 1,
@@ -1164,5 +1330,109 @@ const styles = StyleSheet.create({
     marginTop: 15,
     fontSize: 16,
     fontWeight: '600',
+  },
+  optionsIcon: {
+    padding: 6,
+    marginTop: 2,
+  },
+  detailsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  detailsModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    width: '100%',
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  detailsClientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F4FF',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    gap: 8,
+  },
+  detailsClientName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4C669F',
+    marginLeft: 6,
+  },
+  detailsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+    paddingBottom: 15,
+    marginBottom: 15,
+  },
+  detailsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1C1C1E',
+  },
+  detailsDate: {
+    fontSize: 14,
+    color: '#8E8E93',
+    marginTop: 4,
+  },
+  detailsBody: {
+    marginBottom: 20,
+  },
+  detailsLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  detailsAmount: {
+    fontSize: 28,
+    fontWeight: 'bold',
+  },
+  detailsDescriptionText: {
+    fontSize: 16,
+    color: '#1C1C1E',
+    lineHeight: 22,
+  },
+  detailsActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  detailsActionBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  detailsEditBtn: {
+    backgroundColor: '#F0F4FF',
+  },
+  detailsActionText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  detailsCloseButton: {
+    backgroundColor: '#F2F2F7',
+  },
+  detailsCloseText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#8E8E93',
   },
 });

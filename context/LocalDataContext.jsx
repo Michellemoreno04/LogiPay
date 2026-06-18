@@ -6,11 +6,11 @@
  * Firebase actualiza este store cuando hay conexión.
  */
 
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { db } from '../firebaseConfig/config';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../authContext/authContext';
-import { getCache, setCache, addToOutbox, initDB } from '../utils/database';
+import { db } from '../firebaseConfig/config';
+import { getCache, initDB, setCache } from '../utils/database';
 import { syncOutbox } from '../utils/syncEngine';
 
 const LocalDataContext = createContext(null);
@@ -183,7 +183,7 @@ export function LocalDataProvider({ children }) {
         _timestamp: Date.now(),
         _date: new Date(),
       };
-      
+
       pendingOpsRef.current.addedTxs[newTx.id] = newTx;
       const updatedActivity = [newTx, ...recentActivity].slice(0, 5);
       await updateRecentActivity(updatedActivity);
@@ -195,6 +195,16 @@ export function LocalDataProvider({ children }) {
       }
     }
   }, [clients, recentActivity, updateClients, updateRecentActivity]);
+
+  /**
+   * Edita un cliente localmente.
+   */
+  const editClientOptimistic = useCallback(async ({ clientId, name, phone, email }) => {
+    const updatedClients = clients.map((c) => 
+      c.id === clientId ? { ...c, name, phone, email } : c
+    );
+    await updateClients(updatedClients);
+  }, [clients, updateClients]);
 
   /**
    * Agrega una transacción de cliente localmente.
@@ -283,7 +293,7 @@ export function LocalDataProvider({ children }) {
   const deleteClientOptimistic = useCallback(async (clientId) => {
     const updatedClients = clients.filter(c => c.id !== clientId);
     await updateClients(updatedClients);
-    
+
     // Marcar todas sus txs como eliminadas
     recentActivity.forEach(tx => {
       if (tx.clientId === clientId) pendingOpsRef.current.deletedTxIds.add(tx.id);
@@ -305,6 +315,7 @@ export function LocalDataProvider({ children }) {
     loadingClients,
     // Acciones optimistas
     addClientOptimistic,
+    editClientOptimistic,
     addTransactionOptimistic,
     editTransactionOptimistic,
     deleteTransactionOptimistic,

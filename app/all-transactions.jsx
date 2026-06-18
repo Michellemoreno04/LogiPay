@@ -1,13 +1,13 @@
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../authContext/authContext';
 import { useLocalData } from '../context/LocalDataContext';
-import { collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import { db } from '../firebaseConfig/config';
-import { useEffect, useState } from 'react';
-import { FlashList } from '@shopify/flash-list';
-import { SafeAreaView } from 'react-native-safe-area-context';
 
 // ─── Helper: relative time in Spanish ───
 function timeAgo(date) {

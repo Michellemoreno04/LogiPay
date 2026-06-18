@@ -150,13 +150,16 @@ export default function HomeScreen() {
             borderRadius={20}
           >
             <View style={styles.statsGrid}>
-              {userData?.businessType === 'organization' ? (
+              {!userData ? (
+                // Tarjeta esqueleto mientras cargan los datos
+                <View style={styles.skeletonCard}>
+                  <ActivityIndicator size="small" color="#4C669F" />
+                </View>
+              ) : userData.businessType === 'organization' ? (
                 <OrganisazionScreen userData={userData} onAdjust={openAdjustModal} />
-              ) : userData?.businessType === 'comercial' ? (
-                <>
-                  <ComercialScreen userData={userData} onAdjust={openAdjustModal} />
-                </>
-              ) : null}
+              ) : (
+                <ComercialScreen userData={userData} onAdjust={openAdjustModal} />
+              )}
             </View>
           </TourZone>
         </View>
@@ -322,6 +325,20 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  skeletonCard: {
+    flex: 1,
+    margin: 4,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    minHeight: 160,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#4C669F',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 5,
   },
 
   // ─── Section ───

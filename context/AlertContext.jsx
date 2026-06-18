@@ -1,6 +1,7 @@
-import React, { createContext, useState, useContext, useRef } from 'react';
-import { Animated, StyleSheet, Text, View, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import React, { createContext, useContext, useRef, useState } from 'react';
+import { Animated, Platform, StyleSheet, Text } from 'react-native';
 
 const AlertContext = createContext();
 
@@ -13,6 +14,18 @@ export const AlertProvider = ({ children }) => {
   const showAlert = (message, type = 'success') => {
     setAlertConfig({ visible: true, message, type });
     
+    try {
+      if (type === 'success') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else if (type === 'error') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      }
+    } catch (error) {
+      console.warn('Error playing haptic feedback:', error);
+    }
+
     // Animate in
     Animated.spring(translateY, {
       toValue: 0,
@@ -48,10 +61,10 @@ export const AlertProvider = ({ children }) => {
             alertConfig.type === 'success' ? styles.success : styles.error,
           ]}
         >
-          <Ionicons 
-            name={alertConfig.type === 'success' ? 'checkmark-circle' : 'close-circle'} 
-            size={24} 
-            color="white" 
+          <Ionicons
+            name={alertConfig.type === 'success' ? 'checkmark-circle' : 'close-circle'}
+            size={24}
+            color="white"
             style={styles.icon}
           />
           <Text style={styles.alertText}>{alertConfig.message}</Text>
