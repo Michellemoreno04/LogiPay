@@ -4,6 +4,7 @@ import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebaseConfig/config';
 import { useRouter } from 'expo-router';
 import { Alert } from 'react-native';
+import { getUserData, saveUserData } from '../utils/database';
 
 const AuthContext = createContext({});
 
@@ -22,29 +23,53 @@ export default function AuthProvider({ children }) {
   useEffect(() => {
     let unsubscribeUserDoc = null;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
 
-      // Clean up previous user document listener
+      // Limpiar listener anterior
       if (unsubscribeUserDoc) {
         unsubscribeUserDoc();
         unsubscribeUserDoc = null;
       }
 
       if (currentUser) {
-        // Real-time listener on user document so totalPayment/totalDebt stay in sync
-        const userRef = doc(db, "users", currentUser.uid);
-        unsubscribeUserDoc = onSnapshot(userRef, (snap) => {
-          if (snap.exists()) {
-            setUserData(snap.data());
-          } else {
-            setUserData(null);
+        // 1. Intentar cargar userData desde SQLite primero (para que la UI cargue rápido)
+        try {
+          const localData = await getUserData(currentUser.uid);
+          if (localData) {
+            setUserData(localData);
+            setLoading(false);
           }
-          setLoading(false);
-        }, (error) => {
-          console.error("Error listening to user data:", error);
-          setLoading(false);
-        });
+        } catch (e) {
+          console.warn('[auth] Error loading local userData:', e);
+        }
+
+        // 2. Escuchar Firebase para mantener sincronizado (cuando hay internet)
+        //    Si llegan datos nuevos de Firebase, actualizamos SQLite y el estado.
+        const userRef = doc(db, 'users', currentUser.uid);
+        unsubscribeUserDoc = onSnapshot(
+          userRef,
+          async (snap) => {
+            if (snap.exists()) {
+              const firebaseData = snap.data();
+              // Guardar en SQLite para acceso offline
+              await saveUserData(currentUser.uid, firebaseData);
+              setUserData(firebaseData);
+            } else {
+              // Documento no existe en Firebase, mantener lo que hay en SQLite
+              const localData = await getUserData(currentUser.uid);
+              if (localData) setUserData(localData);
+            }
+            setLoading(false);
+          },
+          async (error) => {
+            // Sin internet: ya tenemos datos de SQLite
+            console.warn('[auth] Firebase user listener offline:', error.code);
+            const localData = await getUserData(currentUser.uid);
+            if (localData) setUserData(localData);
+            setLoading(false);
+          }
+        );
       } else {
         setUserData(null);
         setLoading(false);
@@ -65,9 +90,9 @@ export default function AuthProvider({ children }) {
         onPress: async () => {
           try {
             await signOut(auth);
-            router.replace("/welcome");
+            router.replace('/welcome');
           } catch (error) {
-            console.error("Error signing out:", error);
+            console.error('Error signing out:', error);
           }
         }
       }
@@ -85,18 +110,28 @@ export default function AuthProvider({ children }) {
   const updateUserData = async (newData) => {
     if (!user) return;
     try {
-      const userRef = doc(db, "users", user.uid);
-      await setDoc(userRef, newData, { merge: true });
-      // Actualizamos el estado local para reflejar los cambios de inmediato
+      // 1. Guardar en SQLite de inmediato
+      const current = await getUserData(user.uid);
+      await saveUserData(user.uid, { ...current, ...newData });
       setUserData((prev) => ({ ...prev, ...newData }));
+
+      // 2. Sincronizar con Firebase
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, newData, { merge: true });
     } catch (error) {
-      console.error("Error updating user data:", error);
+      console.error('Error updating user data:', error);
       throw error;
     }
   };
 
   const updateLocalUserData = (newData) => {
-    setUserData((prev) => ({ ...prev, ...newData }));
+    setUserData((prev) => {
+      if (!prev) return newData;
+      const updated = { ...prev, ...newData };
+      // Persistir en SQLite en background (sin await, no bloquear UI)
+      if (user) saveUserData(user.uid, updated).catch(console.error);
+      return updated;
+    });
   };
 
   return (
@@ -115,4 +150,4 @@ export default function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
-};
+}

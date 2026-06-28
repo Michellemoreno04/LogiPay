@@ -6,30 +6,30 @@ import {
   ActivityIndicator,
   Alert,
   DeviceEventEmitter,
-  Dimensions,
   FlatList,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../authContext/authContext';
+import ClientDetailsModals from '../components/modales/ClientDetailsModals';
 import { useAlert } from '../context/AlertContext';
 import { useLocalData } from '../context/LocalDataContext';
-import { db } from '../firebaseConfig/config';
+import { db as firestore } from '../firebaseConfig/config';
 import {
   addTransaction,
   deleteClient,
   deleteTransaction,
   editTransaction,
 } from '../utils/clientService';
-import { getCache, setCache } from '../utils/database';
+import {
+  getClientById,
+  getTransactionsByClient,
+  insertClient,
+  insertTransaction,
+} from '../utils/database';
 import { syncOutbox } from '../utils/syncEngine';
 
 
@@ -42,15 +42,7 @@ const formatDate = (createdAt) => {
   return date.toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
-/** Formatea un número con separadores de miles, permitiendo un decimal. */
-const formatNumber = (value) => {
-  const cleaned = value.replace(/[^0-9.]/g, '');
-  const parts = cleaned.split('.');
-  if (parts.length > 2) return value; // Evitar múltiples puntos decimales
-  if (parts[0] === '') return cleaned;
-  parts[0] = new Intl.NumberFormat('en-US').format(Number(parts[0]));
-  return parts.join('.');
-};
+
 
 /** Formatea monto como moneda (ej. $1,234.00). */
 const formatCurrency = (amount) =>
@@ -62,7 +54,7 @@ const formatCurrency = (amount) =>
 export default function UserDetailsScreen() {
   const { id } = useLocalSearchParams();
   const { user, userData, updateLocalUserData } = useAuth();
-  const { clients, addTransactionOptimistic, editTransactionOptimistic, deleteTransactionOptimistic, deleteClientOptimistic } = useLocalData();
+  const { addTransactionOptimistic, editTransactionOptimistic, deleteTransactionOptimistic, deleteClientOptimistic } = useLocalData();
   const { showAlert } = useAlert();
 
   // ─── Estado del cliente y transacciones ─────────────────────────────────
@@ -92,73 +84,57 @@ export default function UserDetailsScreen() {
   const [txMenuPosition, setTxMenuPosition] = useState({ x: 0, y: 0 });
 
 
-  // ─── Carga del cliente con fallback offline en 3 capas ───────────────────
-  //
-  //  Capa 1: caché individual   → client_ID_uid   (la más rápida)
-  //  Capa 2: caché de lista     → clients_uid     (fallback si no hay capa 1)
-  //  Capa 3: Firestore listener → tiempo real cuando hay internet
-  //
-  //  IMPORTANTE: el listener de Firestore NUNCA pone null si ya cargamos
-  //  datos desde caché. Evita el bug de "cliente no encontrado" offline.
-  //
+  // ─── Carga del cliente desde SQLite (fuente de verdad) ───────────────────
+  //  Capa 1: SQLite local (inmediato, funciona sin internet)
+  //  Capa 2: Firebase en background (sincroniza cuando hay internet)
   useEffect(() => {
     if (!user || !id) return;
     let isMounted = true;
     let unsubscribe = null;
-    // Bandera local para saber si el caché ya respondió con datos
-    let loadedFromCache = false;
 
     const loadClient = async () => {
-      // Capa 1: caché individual (guardado al crear el cliente)
-      const cached = await getCache(`client_${id}_${user.uid}`);
-      if (cached && isMounted) {
-        setClient(cached);
+      // 1. Cargar desde SQLite inmediatamente
+      const localClient = await getClientById(user.uid, id);
+      if (localClient && isMounted) {
+        setClient(localClient);
         setLoadingClient(false);
-        loadedFromCache = true;
       }
 
-      // Capa 2: si no hay caché individual, buscar en la lista general
-      if (!cached) {
-        const cachedList = await getCache(`clients_${user.uid}`);
-        const found = cachedList?.find((c) => c.id === id) ?? null;
-        if (found && isMounted) {
-          setClient(found);
-          // Persistir como caché individual para próximas visitas
-          await setCache(`client_${id}_${user.uid}`, found);
-          setLoadingClient(false);
-          loadedFromCache = true;
-        }
+      // 2. Sincronizar desde Firebase en background
+      try {
+        const clientRef = doc(firestore, 'users', user.uid, 'clients', id);
+        unsubscribe = onSnapshot(
+          clientRef,
+          async (snap) => {
+            if (!isMounted) return;
+            if (snap.exists()) {
+              const data = { id: snap.id, ...snap.data() };
+              // Normalizar Firestore Timestamp
+              if (data.createdAt?.toMillis) data.createdAt = data.createdAt.toMillis();
+              // Guardar en SQLite
+              await insertClient(user.uid, data);
+              // Recargar desde SQLite como fuente de verdad
+              const updated = await getClientById(user.uid, id);
+              if (isMounted && updated) setClient(updated);
+            } else if (!localClient) {
+              // No existe en Firebase ni en SQLite
+              if (isMounted) setClient(null);
+            }
+            if (isMounted) setLoadingClient(false);
+          },
+          (error) => {
+            // Sin internet: ya tenemos datos de SQLite
+            console.warn('[id.jsx] Firebase client listener offline:', error.code);
+            if (isMounted) setLoadingClient(false);
+          }
+        );
+      } catch (e) {
+        console.warn('[id.jsx] Firebase client listener error:', e);
+        if (isMounted) setLoadingClient(false);
       }
-
-      // Capa 3: Firestore en tiempo real (actualiza si hay internet)
-      const clientRef = doc(db, 'users', user.uid, 'clients', id);
-      unsubscribe = onSnapshot(
-        clientRef,
-        (snap) => {
-          if (!isMounted) return;
-          if (snap.exists()) {
-            // Documento existe en Firestore → actualizar estado y caché
-            const data = { id: snap.id, ...snap.data() };
-            setClient(data);
-            setCache(`client_${id}_${user.uid}`, data);
-          }
-          // Si snap.exists() === false pero ya tenemos datos del caché,
-          // NO tocar el estado (el cliente aún no se sincronió con Firestore).
-          // Solo marcar null si realmente no hay ningún dato.
-          if (!snap.exists() && !loadedFromCache) {
-            setClient(null);
-          }
-          setLoadingClient(false);
-        },
-        (error) => {
-          // Sin internet: ya tenemos datos de las capas 1 o 2
-          console.warn('[id.jsx] Firestore client listener:', error.code);
-          if (isMounted) setLoadingClient(false);
-        }
-      );
     };
 
-    syncOutbox(); // Intentar sincronizar pendientes al abrir la pantalla
+    syncOutbox();
     loadClient();
 
     return () => {
@@ -168,60 +144,73 @@ export default function UserDetailsScreen() {
   }, [user, id]);
 
 
-  // ─── Carga de transacciones con fallback offline ──────────────────────────
+  // ─── Carga de transacciones desde SQLite ──────────────────────────────────
   useEffect(() => {
     if (!user || !id) return;
     let isMounted = true;
     let unsubscribe = null;
-    let loadedFromCache = false;
 
     const loadTransactions = async () => {
-      // Caché primero para respuesta inmediata
-      const cached = await getCache(`clientTx_${id}_${user.uid}`);
-      if (cached && isMounted) {
-        setTransactions(cached);
-        if (cached.length > 0) {
-          loadedFromCache = true;
-        }
+      // 1. Cargar desde SQLite inmediatamente
+      const localTxs = await getTransactionsByClient(user.uid, id);
+      if (isMounted) {
+        setTransactions(localTxs.map((tx) => ({
+          ...tx,
+          date: tx.date || formatDate(tx.createdAt),
+        })));
       }
 
-      // Firestore en tiempo real
-      const txRef = collection(db, 'users', user.uid, 'clients', id, 'transactions');
-      const q = query(txRef, orderBy('createdAt', 'desc'));
-
-      unsubscribe = onSnapshot(
-        q,
-        (snapshot) => {
-          if (!isMounted) return;
-
-          if (!snapshot.empty) {
-            const txData = snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-              date: formatDate(doc.data().createdAt),
-            }));
-            setTransactions(txData);
-            setCache(`clientTx_${id}_${user.uid}`, txData); // Mantener caché fresco
-            loadedFromCache = true;
-          } else if (!loadedFromCache) {
-            // Si el snapshot está vacío y no teníamos datos en caché, 
-            // entonces sí está vacío. Si teníamos datos (por transacciones offline), no los borramos.
-            setTransactions([]);
-            setCache(`clientTx_${id}_${user.uid}`, []);
+      // 2. Sincronizar desde Firebase en background
+      try {
+        const txRef = collection(firestore, 'users', user.uid, 'clients', id, 'transactions');
+        const q = query(txRef, orderBy('createdAt', 'desc'));
+        unsubscribe = onSnapshot(
+          q,
+          async (snapshot) => {
+            if (!isMounted) return;
+            // Guardar en SQLite (INSERT OR REPLACE no duplica)
+            for (const docSnap of snapshot.docs) {
+              const data = docSnap.data();
+              await insertTransaction(user.uid, {
+                id: docSnap.id,
+                clientId: id,
+                type: data.type,
+                amount: data.amount,
+                title: data.title || data.description || '',
+                description: data.description || '',
+                date: data.createdAt?.toDate
+                  ? formatDate(data.createdAt)
+                  : (data.date || ''),
+                createdAt: data.createdAt?.toMillis?.() || Date.now(),
+              });
+            }
+            // Recargar desde SQLite
+            const updated = await getTransactionsByClient(user.uid, id);
+            if (isMounted) {
+              setTransactions(updated.map((tx) => ({
+                ...tx,
+                date: tx.date || formatDate(tx.createdAt),
+              })));
+            }
+          },
+          (error) => {
+            console.warn('[id.jsx] Firebase transactions listener offline:', error.code);
           }
-        },
-        (error) => {
-          // Sin internet: ya tenemos datos del caché
-          console.warn('[id.jsx] Firestore transactions listener:', error.code);
-        }
-      );
+        );
+      } catch (e) {
+        console.warn('[id.jsx] Firebase transactions listener error:', e);
+      }
     };
 
     loadTransactions();
 
+    // Escuchar cambios locales para refrescar
+    const sub = DeviceEventEmitter.addListener('local-db-changed', loadTransactions);
+
     return () => {
       isMounted = false;
       if (unsubscribe) unsubscribe();
+      sub.remove();
     };
   }, [user, id]);
 
@@ -502,6 +491,7 @@ export default function UserDetailsScreen() {
   };
 
 
+
   // ─── Renderer de fila de transacción ─────────────────────────────────────
   const renderTransaction = ({ item }) => (
     <TouchableOpacity style={styles.transactionCard} onPress={() => openDetailsModal(item)} activeOpacity={0.7}>
@@ -628,286 +618,35 @@ export default function UserDetailsScreen() {
           />
         </View>
 
-        {/* ── Modal: agregar / editar transacción ── */}
-        <Modal
-          visible={modalVisible}
-          animationType="slide"
-          transparent={true}
-          onRequestClose={closeModal}
-        >
-          <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <ScrollView
-              contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end', paddingTop: Platform.OS === 'ios' ? 60 : 20 }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={styles.modalContainer}>
-                {/* Header del modal */}
-                <View style={styles.modalHeader}>
-                  <View style={{ flex: 1, alignItems: 'flex-start' }}>
-                    <TouchableOpacity onPress={closeModal}>
-                      <Text style={styles.modalCancel}>Cancelar</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.modalTitle} numberOfLines={1}>
-                    {editingTransactionId ? 'Editar Transacción' : (transactionType === 'payment' ? 'Abonar Pago' : 'Agregar Deuda')}
-                  </Text>
-                  <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                    {/* Botón de eliminar movido a las opciones, pero lo mantenemos por si acaso */}
-                  </View>
-                </View>
-
-                {/* Chip con nombre del cliente */}
-                <View style={styles.clientChip}>
-                  <Ionicons name="person-circle-outline" size={20} color="#4C669F" />
-                  <Text style={styles.clientChipText}>{client.name}</Text>
-                </View>
-
-                {/* Selector de tipo */}
-                <View style={styles.typeSelector}>
-                  <TouchableOpacity
-                    style={[styles.typeButton, transactionType === 'payment' && styles.typeButtonActivePayment]}
-                    onPress={() => setTransactionType('payment')}
-                  >
-                    <Ionicons name="arrow-down-circle" size={22} color={transactionType === 'payment' ? 'white' : '#34C759'} />
-                    <Text style={[styles.typeButtonText, transactionType === 'payment' && styles.typeButtonTextActive]}>Pago</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.typeButton, transactionType === 'debt' && styles.typeButtonActiveDebt]}
-                    onPress={() => setTransactionType('debt')}
-                  >
-                    <Ionicons name="arrow-up-circle" size={22} color={transactionType === 'debt' ? 'white' : '#FF3B30'} />
-                    <Text style={[styles.typeButtonText, transactionType === 'debt' && styles.typeButtonTextActive]}>Deuda</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Monto */}
-                <Text style={styles.inputLabel}>Monto *</Text>
-                <View style={styles.amountInputContainer}>
-                  <Text style={styles.currencySymbol}>$</Text>
-                  <TextInput
-                    style={styles.amountInput}
-                    placeholder="0.00"
-                    placeholderTextColor="#C7C7CC"
-                    value={amount}
-                    onChangeText={(text) => setAmount(formatNumber(text))}
-                    keyboardType="decimal-pad"
-                    autoFocus
-                  />
-                </View>
-
-                {/* Título */}
-                <Text style={styles.inputLabel}>Título *</Text>
-                <TextInput
-                  style={styles.titleInput}
-                  placeholder={transactionType === 'payment' ? 'Ej. Abono a cuenta...' : 'Ej. Préstamo de material...'}
-                  placeholderTextColor="#C7C7CC"
-                  value={title}
-                  onChangeText={setTitle}
-                />
-
-                {/* Descripción */}
-                <Text style={styles.inputLabel}>Descripción (Opcional)</Text>
-                <TextInput
-                  style={styles.descriptionInput}
-                  placeholder="Detalles adicionales..."
-                  placeholderTextColor="#C7C7CC"
-                  value={description}
-                  onChangeText={setDescription}
-                  multiline
-                />
-
-                {/* Botón guardar */}
-                <TouchableOpacity
-                  style={[
-                    styles.saveButton,
-                    (!amount || !title.trim() || saving) && styles.saveButtonDisabled,
-                    transactionType === 'payment' ? styles.savePaymentTheme : styles.saveDebtTheme,
-                  ]}
-                  onPress={handleSaveTransaction}
-                  disabled={saving}
-                >
-                  {saving
-                    ? <ActivityIndicator color="white" />
-                    : <Text style={styles.saveButtonText}>Guardar Transacción</Text>
-                  }
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </Modal>
-
-        {/* ── Modal: opciones del cliente ── */}
-        <Modal
-          visible={optionsVisible}
-          animationType="fade"
-          transparent={true}
-          onRequestClose={() => setOptionsVisible(false)}
-        >
-          <TouchableOpacity style={styles.optionsOverlay} activeOpacity={1} onPress={() => setOptionsVisible(false)}>
-            <View style={styles.optionsContent}>
-              <TouchableOpacity
-                style={styles.optionItem}
-                onPress={() => {
-                  setOptionsVisible(false);
-                  router.push({
-                    pathname: '/add-user',
-                    params: {
-                      clientId: client.id,
-                      name: client.name,
-                      phone: client.phone || '',
-                      email: client.email || '',
-                    },
-                  });
-                }}
-              >
-                <Ionicons name="create-outline" size={22} color="#4C669F" />
-                <Text style={styles.optionText}>Editar cliente</Text>
-              </TouchableOpacity>
-
-              <View style={styles.optionDivider} />
-
-              <TouchableOpacity style={styles.optionItem} onPress={handleDeleteClient}>
-                <Ionicons name="trash-outline" size={22} color="#FF3B30" />
-                <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar cliente</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </Modal>
-
-        {/* ── Modal: Detalles de la transacción ── */}
-        <Modal
-          visible={detailsModalVisible}
-          animationType="fade"
-          transparent={true}
-          onRequestClose={closeDetailsModal}
-        >
-          <TouchableOpacity style={styles.detailsOverlay} activeOpacity={1} onPress={closeDetailsModal}>
-            <TouchableOpacity activeOpacity={1} style={styles.detailsModalContent}>
-              {selectedTransaction && (
-                <>
-                  {/* Header con icono y título */}
-                  <View style={styles.detailsHeader}>
-                    <View style={[styles.iconBg, {
-                      backgroundColor: selectedTransaction.type === 'payment' ? '#E8F9EE' : '#FDECEA',
-                      marginRight: 12,
-                      width: 48, height: 48, borderRadius: 24,
-                    }]}>
-                      <Ionicons
-                        name={selectedTransaction.type === 'payment' ? 'arrow-down-circle' : 'arrow-up-circle'}
-                        size={30}
-                        color={selectedTransaction.type === 'payment' ? '#34C759' : '#FF3B30'}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.detailsTitle}>{selectedTransaction.title || selectedTransaction.description}</Text>
-                      <Text style={styles.detailsDate}>{selectedTransaction.date}</Text>
-                    </View>
-                  </View>
-
-                  {/* Nombre del cliente */}
-                  <View style={styles.detailsClientRow}>
-                    <Ionicons name="person-circle-outline" size={18} color="#4C669F" />
-                    <Text style={styles.detailsClientName}>{client?.name || 'Cliente'}</Text>
-                  </View>
-
-                  {/* Monto */}
-                  <View style={styles.detailsBody}>
-                    <Text style={styles.detailsLabel}>Monto</Text>
-                    <Text style={[styles.detailsAmount, selectedTransaction.type === 'payment' ? styles.positiveBalance : styles.negativeBalance]}>
-                      {selectedTransaction.type === 'payment' ? '+' : '-'}${formatCurrency(selectedTransaction.amount)}
-                    </Text>
-
-                    {/* Descripción (solo si existe y es diferente al título) */}
-                    {selectedTransaction.description && selectedTransaction.description !== selectedTransaction.title && (
-                      <>
-                        <Text style={[styles.detailsLabel, { marginTop: 16 }]}>Descripción</Text>
-                        <Text style={styles.detailsDescriptionText}>{selectedTransaction.description}</Text>
-                      </>
-                    )}
-                  </View>
-
-                  {/* Acciones: Editar | Cerrar */}
-                  <View style={styles.detailsActions}>
-                    <TouchableOpacity
-                      style={[styles.detailsActionBtn, styles.detailsEditBtn]}
-                      onPress={() => { closeDetailsModal(); openEditModal(selectedTransaction); }}
-                    >
-                      <Ionicons name="create-outline" size={18} color="#4C669F" />
-                      <Text style={[styles.detailsActionText, { color: '#4C669F' }]}>Editar</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.detailsActionBtn, styles.detailsCloseButton]}
-                      onPress={closeDetailsModal}
-                    >
-                      <Text style={styles.detailsCloseText}>Cerrar</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              )}
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </Modal>
-
-        {/* ── Modal: Opciones de transacción ── */}
-        <Modal
-          visible={transactionOptionsVisible}
-          animationType="fade"
-          transparent={true}
-          onRequestClose={() => setTransactionOptionsVisible(false)}
-        >
-          <TouchableOpacity style={styles.txOptionsOverlay} activeOpacity={1} onPress={() => setTransactionOptionsVisible(false)}>
-            <View
-              style={[
-                styles.txOptionsContent,
-                {
-                  top: (() => {
-                    const { height: screenHeight } = Dimensions.get('window');
-                    const menuHeight = 110;
-                    let calculatedTop = txMenuPosition.y + menuHeight > screenHeight - 40
-                      ? txMenuPosition.y - menuHeight - 10
-                      : txMenuPosition.y + 10;
-                    return Math.max(20, calculatedTop);
-                  })(),
-                  right: 20,
-                },
-              ]}
-            >
-              <TouchableOpacity
-                style={styles.optionItem}
-                onPress={() => {
-                  setTransactionOptionsVisible(false);
-                  if (selectedTxForOptions) openEditModal(selectedTxForOptions);
-                }}
-              >
-                <Ionicons name="create-outline" size={22} color="#4C669F" />
-                <Text style={styles.optionText}>Editar Transacción</Text>
-              </TouchableOpacity>
-
-              <View style={styles.optionDivider} />
-
-              <TouchableOpacity
-                style={styles.optionItem}
-                onPress={() => {
-                  setTransactionOptionsVisible(false);
-                  if (selectedTxForOptions) handleDeleteTransaction(selectedTxForOptions.id);
-                }}
-              >
-                <Ionicons name="trash-outline" size={22} color="#FF3B30" />
-                <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar Transacción</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </Modal>
-
-        {/* ── Overlay de eliminando ── */}
-        {deleting && (
-          <View style={styles.deletingOverlay}>
-            <ActivityIndicator size="large" color="white" />
-            <Text style={styles.deletingText}>Eliminando cliente...</Text>
-          </View>
-        )}
-
+        <ClientDetailsModals
+          modalVisible={modalVisible}
+          closeModal={closeModal}
+          optionsVisible={optionsVisible}
+          setOptionsVisible={setOptionsVisible}
+          detailsModalVisible={detailsModalVisible}
+          closeDetailsModal={closeDetailsModal}
+          transactionOptionsVisible={transactionOptionsVisible}
+          setTransactionOptionsVisible={setTransactionOptionsVisible}
+          client={client}
+          selectedTransaction={selectedTransaction}
+          selectedTxForOptions={selectedTxForOptions}
+          txMenuPosition={txMenuPosition}
+          transactionType={transactionType}
+          setTransactionType={setTransactionType}
+          amount={amount}
+          setAmount={setAmount}
+          title={title}
+          setTitle={setTitle}
+          description={description}
+          setDescription={setDescription}
+          editingTransactionId={editingTransactionId}
+          saving={saving}
+          deleting={deleting}
+          handleSaveTransaction={handleSaveTransaction}
+          handleDeleteClient={handleDeleteClient}
+          handleDeleteTransaction={handleDeleteTransaction}
+          openEditModal={openEditModal}
+        />
       </View>
     </SafeAreaView>
   );
@@ -947,7 +686,6 @@ const styles = StyleSheet.create({
   headerContainer: {
     backgroundColor: 'white',
     padding: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 20,
     alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E5EA',
@@ -956,11 +694,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 50 : 10,
-    left: 20,
-    right: 20,
-    zIndex: 1,
+
   },
   headerIconButton: {
     padding: 8,
@@ -1125,314 +859,8 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 15,
   },
-  /* ── Modal de transacción ── */
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalContainer: {
-    backgroundColor: '#F2F2F7',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalCancel: {
-    fontSize: 16,
-    color: '#FF3B30',
-    fontWeight: '500',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1C1C1E',
-    flex: 2,
-    textAlign: 'center',
-  },
-  clientChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'center',
-    backgroundColor: 'white',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    marginBottom: 20,
-  },
-  clientChipText: {
-    marginLeft: 6,
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#4C669F',
-  },
-  typeSelector: {
-    flexDirection: 'row',
-    marginBottom: 20,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 4,
-  },
-  typeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
-  },
-  typeButtonActivePayment: {
-    backgroundColor: '#34C759',
-  },
-  typeButtonActiveDebt: {
-    backgroundColor: '#FF3B30',
-  },
-  typeButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#8E8E93',
-    marginLeft: 6,
-  },
-  typeButtonTextActive: {
-    color: 'white',
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#8E8E93',
-    marginBottom: 6,
-    textTransform: 'uppercase',
-  },
-  amountInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    marginBottom: 16,
-  },
-  currencySymbol: {
-    fontSize: 24,
-    color: '#1C1C1E',
-    marginRight: 5,
-  },
-  amountInput: {
-    flex: 1,
-    paddingVertical: 14,
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1C1C1E',
-  },
-  titleInput: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 15,
-    fontSize: 16,
-    color: '#1C1C1E',
-    marginBottom: 20,
-  },
-  descriptionInput: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 15,
-    fontSize: 16,
-    color: '#1C1C1E',
-    height: 80,
-    textAlignVertical: 'top',
-    marginBottom: 20,
-  },
-  saveButton: {
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  savePaymentTheme: {
-    backgroundColor: '#34C759',
-  },
-  saveDebtTheme: {
-    backgroundColor: '#FF3B30',
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#D1D1D6',
-  },
-  saveButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  /* ── Modal de opciones ── */
-  optionsOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'flex-start',
-    alignItems: 'flex-end',
-    paddingTop: Platform.OS === 'ios' ? 100 : 60,
-    paddingRight: 20,
-  },
-  optionsContent: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    width: 240,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
-    overflow: 'hidden',
-  },
-  txOptionsOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.15)',
-  },
-  txOptionsContent: {
-    position: 'absolute',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    width: 240,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 5,
-    overflow: 'hidden',
-  },
-  optionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-  },
-  optionText: {
-    marginLeft: 12,
-    fontSize: 16,
-    color: '#1C1C1E',
-    fontWeight: '500',
-
-  },
-  optionDivider: {
-    height: 1,
-    backgroundColor: '#E5E5EA',
-  },
-  deletingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1000,
-  },
-  deletingText: {
-    color: 'white',
-    marginTop: 15,
-    fontSize: 16,
-    fontWeight: '600',
-  },
   optionsIcon: {
     padding: 6,
     marginTop: 2,
-  },
-  detailsOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  detailsModalContent: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    width: '100%',
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  detailsClientRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0F4FF',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    gap: 8,
-  },
-  detailsClientName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4C669F',
-    marginLeft: 6,
-  },
-  detailsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E5E5EA',
-    paddingBottom: 15,
-    marginBottom: 15,
-  },
-  detailsTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1C1C1E',
-  },
-  detailsDate: {
-    fontSize: 14,
-    color: '#8E8E93',
-    marginTop: 4,
-  },
-  detailsBody: {
-    marginBottom: 20,
-  },
-  detailsLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#8E8E93',
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  detailsAmount: {
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
-  detailsDescriptionText: {
-    fontSize: 16,
-    color: '#1C1C1E',
-    lineHeight: 22,
-  },
-  detailsActions: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  detailsActionBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  detailsEditBtn: {
-    backgroundColor: '#F0F4FF',
-  },
-  detailsActionText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  detailsCloseButton: {
-    backgroundColor: '#F2F2F7',
-  },
-  detailsCloseText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#8E8E93',
   },
 });

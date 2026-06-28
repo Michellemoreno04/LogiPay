@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
-import { Link } from 'expo-router';
 import { FontAwesome6, Ionicons } from '@expo/vector-icons';
-import { useLocalData } from '../../context/LocalDataContext';
+import { Link } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { useState } from 'react';
+import { FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalData } from '../../context/LocalDataContext';
 
 
 
@@ -45,7 +46,8 @@ export default function UsersScreen() {
 
   return (
     <View style={styles.container}>
-      <SafeAreaView>
+      <StatusBar style='dark' />
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <FlatList
           data={filteredUsers}
           keyExtractor={(item) => item.id}

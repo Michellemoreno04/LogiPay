@@ -2,7 +2,7 @@ export default {
   "expo": {
     "name": "LogiPay",
     "slug": "LogiPay",
-    "version": "1.1.1",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/images/ios-app-icon.png",
     "scheme": "logipay",
@@ -37,6 +37,14 @@ export default {
       "expo-sqlite",
       "expo-router",
       [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/ios-app-icon.png",
@@ -70,7 +78,8 @@ export default {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/59d9a8b9-03da-4313-b6b6-04a1ea8a5faf"
+      "url": "https://u.expo.dev/59d9a8b9-03da-4313-b6b6-04a1ea8a5faf",
+      "fallbackToCacheTimeout": 0
     }
   }
 }

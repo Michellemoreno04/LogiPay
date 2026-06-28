@@ -1,8 +1,9 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../authContext/authContext';
-
 
 export default function ProfileScreen() {
 
@@ -38,80 +39,83 @@ export default function ProfileScreen() {
 
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.profileHeader}>
-        <View style={styles.avatarContainer}>
-          <Ionicons name="person-circle" size={100} color="#4C669F" />
+    <SafeAreaView style={{ flex: 1 }} >
+      <StatusBar style="dark" />
+      <ScrollView style={styles.container}>
+        <View style={styles.profileHeader}>
+          <View style={styles.avatarContainer}>
+            <Ionicons name="person-circle" size={100} color="#4C669F" />
+          </View>
+          <Text style={styles.userName}>
+            {userData ? `${userData.firstName} ${userData.lastName}` : 'Cargando...'}
+          </Text>
+          {userData?.businessName && (
+            <Text style={styles.businessName}>{userData.businessName}</Text>
+          )}
+          <Text style={styles.userEmail}>{user?.email || 'email@ejemplo.com'}</Text>
         </View>
-        <Text style={styles.userName}>
-          {userData ? `${userData.firstName} ${userData.lastName}` : 'Cargando...'}
-        </Text>
-        {userData?.businessName && (
-          <Text style={styles.businessName}>{userData.businessName}</Text>
-        )}
-        <Text style={styles.userEmail}>{user?.email || 'email@ejemplo.com'}</Text>
-      </View>
 
-      <View style={styles.menu}>
-        <Text style={styles.menuTitle}>Ajustes</Text>
-        <TouchableOpacity style={styles.menuItem} onPress={goToEditProfile}>
-          <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
-            <Ionicons name="settings-outline" size={20} color="#1C1C1E" />
-          </View>
-          <Text style={styles.menuText}>Editar perfil</Text>
-          <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
-        </TouchableOpacity>
+        <View style={styles.menu}>
+          <Text style={styles.menuTitle}>Ajustes</Text>
+          <TouchableOpacity style={styles.menuItem} onPress={goToEditProfile}>
+            <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
+              <Ionicons name="settings-outline" size={20} color="#1C1C1E" />
+            </View>
+            <Text style={styles.menuText}>Editar perfil</Text>
+            <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+          </TouchableOpacity>
 
 
 
-        <Text style={styles.menuTitle}>Información</Text>
-        <TouchableOpacity style={styles.menuItem} onPress={gotPrivacy}>
-          <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
-            <Ionicons name="shield-checkmark-outline" size={20} color="#1C1C1E" />
-          </View>
-          <Text style={styles.menuText}>Privacidad y Seguridad</Text>
-          <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem} onPress={gotToTerms}>
-          <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
-            <Ionicons name="information-circle-outline" size={20} color="#1C1C1E" />
-          </View>
-          <Text style={styles.menuText}>Terminos y condiciones</Text>
-          <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
-        </TouchableOpacity>
+          <Text style={styles.menuTitle}>Información</Text>
+          <TouchableOpacity style={styles.menuItem} onPress={gotPrivacy}>
+            <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
+              <Ionicons name="shield-checkmark-outline" size={20} color="#1C1C1E" />
+            </View>
+            <Text style={styles.menuText}>Privacidad y Seguridad</Text>
+            <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={gotToTerms}>
+            <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
+              <Ionicons name="information-circle-outline" size={20} color="#1C1C1E" />
+            </View>
+            <Text style={styles.menuText}>Terminos y condiciones</Text>
+            <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+          </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} onPress={handleSupport}>
-          <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
-            <Ionicons name="help-circle-outline" size={20} color="#1C1C1E" />
-          </View>
-          <Text style={styles.menuText}>Ayuda y Soporte</Text>
-          <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.menuItem} onPress={handleSupport}>
+            <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
+              <Ionicons name="help-circle-outline" size={20} color="#1C1C1E" />
+            </View>
+            <Text style={styles.menuText}>Ayuda y Soporte</Text>
+            <Ionicons name="chevron-forward" size={20} color="#C7C7CC" />
+          </TouchableOpacity>
 
-        <Text style={styles.menuTitle}>Cuenta</Text>
+          <Text style={styles.menuTitle}>Cuenta</Text>
 
-        <TouchableOpacity style={[styles.menuItem, { marginTop: 0, borderBottomWidth: 0 }]}
-          onPress={handleDeleteAccount}
-        >
-          <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
-            <Ionicons name="trash-outline" size={20} color="#1C1C1E" />
-          </View>
-          <Text style={styles.menuText}>Eliminar cuenta</Text>
-        </TouchableOpacity>
+          <TouchableOpacity style={[styles.menuItem, { marginTop: 0, borderBottomWidth: 0 }]}
+            onPress={handleDeleteAccount}
+          >
+            <View style={[styles.iconBox, { backgroundColor: '#E5E5EA' }]}>
+              <Ionicons name="trash-outline" size={20} color="#1C1C1E" />
+            </View>
+            <Text style={styles.menuText}>Eliminar cuenta</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]}
-          onPress={logout}
-        >
-          <View style={[styles.iconBox, { backgroundColor: '#FF95001A' }]}>
-            <Ionicons name="log-out-outline" size={20} color="#FF9500" />
-          </View>
-          <Text style={[styles.menuText, { color: '#FF9500' }]}>Cerrar Sesión</Text>
-        </TouchableOpacity>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]}
+            onPress={logout}
+          >
+            <View style={[styles.iconBox, { backgroundColor: '#FF95001A' }]}>
+              <Ionicons name="log-out-outline" size={20} color="#FF9500" />
+            </View>
+            <Text style={[styles.menuText, { color: '#FF9500' }]}>Cerrar Sesión</Text>
+          </TouchableOpacity>
 
-      </View>
+        </View>
 
-      <Text style={styles.version}>LogiPay v1.0.0</Text>
-    </ScrollView>
+        <Text style={styles.version}>LogiPay v1.2.1</Text>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

@@ -1,8 +1,18 @@
-
-
 import { collection, doc } from 'firebase/firestore';
 import { db } from '../firebaseConfig/config';
-import { addToOutbox, getCache, setCache } from './database';
+import {
+  addToOutbox,
+  deleteClientDB,
+  deleteTransactionDB,
+  getClientById,
+  getClients,
+  getTransactionsByClient,
+  insertClient,
+  insertTransaction,
+  updateClient,
+  updateTransaction,
+  updateUserDataField,
+} from './database';
 
 const formatServiceDate = (date) => {
   const dateStr = date.toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -13,18 +23,9 @@ const formatServiceDate = (date) => {
 // ─── Clientes ────────────────────────────────────────────────────────────────
 
 /**
- * Crea un nuevo cliente en el outbox y en caché.
- *
- * @param {object} params
- * @param {string} params.uid            - UID del usuario autenticado
- * @param {string} params.name
- * @param {string} params.phone
- * @param {string} params.email
- * @param {number} params.parsedBalance  - Monto numérico del saldo inicial
- * @param {string} params.transactionType - 'payment' | 'debt'
- * @param {string} params.balanceDescription
- *
- * @returns {{ clientId: string, initialTxId: string|null, balance: number }}
+ * Crea un nuevo cliente:
+ * 1. Guarda en SQLite (fuente de verdad local)
+ * 2. Encola en outbox para Firebase
  */
 export const createClient = async ({
   uid,
@@ -39,10 +40,20 @@ export const createClient = async ({
   const clientsRef = collection(db, 'users', uid, 'clients');
   const clientId = doc(clientsRef).id;
 
-  // payment → balance sube (positivo), debt → balance baja (negativo)
   const balance = transactionType === 'payment' ? parsedBalance : -parsedBalance;
+  const now = Date.now();
 
-  // 1. Encolar creación del cliente
+  // 1. Guardar cliente en SQLite
+  await insertClient(uid, {
+    id: clientId,
+    name,
+    phone,
+    email,
+    balance,
+    createdAt: now,
+  });
+
+  // 2. Encolar creación en Firebase (outbox)
   await addToOutbox(`users/${uid}/clients`, clientId, {
     name,
     phone,
@@ -53,102 +64,69 @@ export const createClient = async ({
 
   let initialTxId = null;
 
-  // 2. Si hay saldo inicial, encolar la transacción y actualizar totales
+  // 3. Si hay saldo inicial, crear la transacción
   if (parsedBalance > 0) {
-    // Actualizar total global del usuario
-    const totalField = transactionType === 'payment' ? 'totalPayment' : 'totalDebt';
-    await addToOutbox('users', uid, {
-      [totalField]: `INCREMENT_${parsedBalance}`,
-    }, 'update');
-
-    // Generar ID para la transacción inicial
     const txRef = collection(db, 'users', uid, 'clients', clientId, 'transactions');
     initialTxId = doc(txRef).id;
+    const date = formatServiceDate(new Date());
 
-    // Encolar la transacción inicial
+    // Guardar transacción en SQLite
+    await insertTransaction(uid, {
+      id: initialTxId,
+      clientId,
+      type: transactionType,
+      amount: parsedBalance,
+      title: balanceDescription || 'Saldo inicial',
+      description: balanceDescription || 'Saldo inicial',
+      date,
+      createdAt: now,
+    });
+
+    // Actualizar totales del usuario en SQLite
+    const totalField = transactionType === 'payment' ? 'totalPayment' : 'totalDebt';
+    await updateUserDataField(uid, totalField, parsedBalance);
+
+    // Encolar transacción en outbox
     await addToOutbox(
       `users/${uid}/clients/${clientId}/transactions`,
       initialTxId,
       {
         type: transactionType,
         amount: parsedBalance,
+        title: balanceDescription || 'Saldo inicial',
         description: balanceDescription || 'Saldo inicial',
         createdAt: 'SERVER_TIMESTAMP',
       },
       'set'
     );
 
-    // Guardar transacción en caché
-    const initialDate = formatServiceDate(new Date());
-    await setCache(`clientTx_${clientId}_${uid}`, [{
-      id: initialTxId,
-      type: transactionType,
-      amount: parsedBalance,
-      description: balanceDescription || 'Saldo inicial',
-      date: initialDate,
-    }]);
-  } else {
-    await setCache(`clientTx_${clientId}_${uid}`, []);
+    // Encolar actualización de totales
+    await addToOutbox('users', uid, {
+      [totalField]: `INCREMENT_${parsedBalance}`,
+    }, 'update');
   }
-
-  // 3. Guardar el cliente en caché individual (para acceso offline rápido)
-  await setCache(`client_${clientId}_${uid}`, {
-    id: clientId, name, phone, email, balance, createdAt: Date.now(),
-  });
 
   return { clientId, initialTxId, balance };
 };
 
 /**
- * Edita un cliente existente en el outbox y en caché.
- *
- * @param {object} params
- * @param {string} params.uid
- * @param {string} params.clientId
- * @param {string} params.name
- * @param {string} params.phone
- * @param {string} params.email
+ * Edita un cliente existente en SQLite y encola en outbox.
  */
 export const editClient = async ({ uid, clientId, name, phone, email }) => {
-  // 1. Encolar actualización del cliente
-  await addToOutbox(`users/${uid}/clients`, clientId, {
-    name,
-    phone,
-    email,
-  }, 'update');
+  // 1. Actualizar en SQLite
+  await updateClient(uid, clientId, { name, phone, email });
 
-  // 2. Actualizar caché de la lista de clientes
-  const cachedClients = await getCache(`clients_${uid}`);
-  if (cachedClients) {
-    await setCache(`clients_${uid}`, cachedClients.map((c) =>
-      c.id === clientId ? { ...c, name, phone, email } : c
-    ));
-  }
-
-  // 3. Guardar el cliente en caché individual
-  const cachedClient = await getCache(`client_${clientId}_${uid}`);
-  if (cachedClient) {
-    await setCache(`client_${clientId}_${uid}`, {
-      ...cachedClient,
-      name, phone, email
-    });
-  }
+  // 2. Encolar en outbox
+  await addToOutbox(`users/${uid}/clients`, clientId, { name, phone, email }, 'update');
 };
 
 
 // ─── Transacciones ───────────────────────────────────────────────────────────
 
 /**
- * Agrega una nueva transacción a un cliente.
- *
- * @param {object} params
- * @param {string} params.uid
- * @param {string} params.clientId
- * @param {string} params.type          - 'payment' | 'debt'
- * @param {number} params.amount
- * @param {string} params.description
- *
- * @returns {{ txId: string, balanceChange: number, totalField: string }}
+ * Agrega una nueva transacción:
+ * 1. Guarda en SQLite
+ * 2. Encola en outbox para Firebase
  */
 export const addTransaction = async ({ uid, clientId, type, amount, title, description }) => {
   const txRef = collection(db, 'users', uid, 'clients', clientId, 'transactions');
@@ -156,8 +134,33 @@ export const addTransaction = async ({ uid, clientId, type, amount, title, descr
 
   const balanceChange = type === 'payment' ? amount : -amount;
   const totalField = type === 'payment' ? 'totalPayment' : 'totalDebt';
+  const now = Date.now();
+  const date = formatServiceDate(new Date());
 
-  // 1. Encolar en outbox
+  // 1. Guardar transacción en SQLite
+  await insertTransaction(uid, {
+    id: txId,
+    clientId,
+    type,
+    amount,
+    title: title || '',
+    description: description || '',
+    date,
+    createdAt: now,
+  });
+
+  // 2. Actualizar balance del cliente en SQLite
+  const client = await getClientById(uid, clientId);
+  if (client) {
+    await updateClient(uid, clientId, {
+      balance: (client.balance || 0) + balanceChange,
+    });
+  }
+
+  // 3. Actualizar totales del usuario en SQLite
+  await updateUserDataField(uid, totalField, amount);
+
+  // 4. Encolar en outbox
   await addToOutbox(
     `users/${uid}/clients/${clientId}/transactions`,
     txId,
@@ -167,45 +170,25 @@ export const addTransaction = async ({ uid, clientId, type, amount, title, descr
   await addToOutbox(`users/${uid}/clients`, clientId, { balance: `INCREMENT_${balanceChange}` }, 'update');
   await addToOutbox('users', uid, { [totalField]: `INCREMENT_${amount}` }, 'update');
 
-  // 2. Actualizar caché de transacciones
   const newTx = {
     id: txId,
+    clientId,
     type,
     amount,
     title,
     description,
-    date: formatServiceDate(new Date()),
+    date,
+    createdAt: now,
   };
-  const cachedTxs = (await getCache(`clientTx_${clientId}_${uid}`)) || [];
-  await setCache(`clientTx_${clientId}_${uid}`, [newTx, ...cachedTxs]);
-
-  // 3. Actualizar caché del cliente
-  const cachedClient = await getCache(`client_${clientId}_${uid}`);
-  if (cachedClient) {
-    await setCache(`client_${clientId}_${uid}`, {
-      ...cachedClient,
-      balance: (cachedClient.balance || 0) + balanceChange,
-    });
-  }
 
   return { txId, balanceChange, totalField, newTx };
 };
 
 
 /**
- * Edita una transacción existente.
- *
- * @param {object} params
- * @param {string} params.uid
- * @param {string} params.clientId
- * @param {string} params.txId
- * @param {string} params.oldType
- * @param {number} params.oldAmount
- * @param {string} params.newType
- * @param {number} params.newAmount
- * @param {string} params.newDescription
- *
- * @returns {{ netBalanceChange: number, paymentDiff: number, debtDiff: number }}
+ * Edita una transacción existente:
+ * 1. Actualiza en SQLite
+ * 2. Encola en outbox para Firebase
  */
 export const editTransaction = async ({
   uid,
@@ -218,7 +201,6 @@ export const editTransaction = async ({
   newTitle,
   newDescription,
 }) => {
-  // Calcular diferencias de balance
   const oldBalanceChange = oldType === 'payment' ? -oldAmount : oldAmount;
   const newBalanceChange = newType === 'payment' ? newAmount : -newAmount;
   const netBalanceChange = oldBalanceChange + newBalanceChange;
@@ -230,7 +212,29 @@ export const editTransaction = async ({
   if (newType === 'payment') paymentDiff += newAmount;
   else debtDiff += newAmount;
 
-  // 1. Encolar en outbox
+  // 1. Actualizar transacción en SQLite
+  await updateTransaction(uid, txId, {
+    type: newType,
+    amount: newAmount,
+    title: newTitle || '',
+    description: newDescription || '',
+  });
+
+  // 2. Actualizar balance del cliente en SQLite
+  if (netBalanceChange !== 0) {
+    const client = await getClientById(uid, clientId);
+    if (client) {
+      await updateClient(uid, clientId, {
+        balance: (client.balance || 0) + netBalanceChange,
+      });
+    }
+  }
+
+  // 3. Actualizar totales del usuario en SQLite
+  if (paymentDiff !== 0) await updateUserDataField(uid, 'totalPayment', paymentDiff);
+  if (debtDiff !== 0) await updateUserDataField(uid, 'totalDebt', debtDiff);
+
+  // 4. Encolar en outbox
   await addToOutbox(
     `users/${uid}/clients/${clientId}/transactions`,
     txId,
@@ -247,105 +251,71 @@ export const editTransaction = async ({
     await addToOutbox('users', uid, userUpdate, 'update');
   }
 
-  // 2. Actualizar caché de transacciones
-  const cachedTxs = await getCache(`clientTx_${clientId}_${uid}`);
-  if (cachedTxs) {
-    await setCache(
-      `clientTx_${clientId}_${uid}`,
-      cachedTxs.map((t) =>
-        t.id === txId
-          ? { ...t, type: newType, amount: newAmount, title: newTitle, description: newDescription }
-          : t
-      )
-    );
-  }
-
-  // 3. Actualizar caché del cliente
-  const cachedClient = await getCache(`client_${clientId}_${uid}`);
-  if (cachedClient) {
-    await setCache(`client_${clientId}_${uid}`, {
-      ...cachedClient,
-      balance: (cachedClient.balance || 0) + netBalanceChange,
-    });
-  }
-
   return { netBalanceChange, paymentDiff, debtDiff };
 };
 
 
 /**
- * Elimina una transacción existente.
- *
- * @param {object} params
- * @param {string} params.uid
- * @param {string} params.clientId
- * @param {string} params.txId
- * @param {string} params.type          - 'payment' | 'debt'
- * @param {number} params.amount
- *
- * @returns {{ balanceChange: number, totalField: string }}
+ * Elimina una transacción:
+ * 1. Elimina de SQLite
+ * 2. Encola en outbox para Firebase
  */
 export const deleteTransaction = async ({ uid, clientId, txId, type, amount }) => {
   const balanceChange = type === 'payment' ? -amount : amount;
   const totalField = type === 'payment' ? 'totalPayment' : 'totalDebt';
 
-  // 1. Encolar en outbox
+  // 1. Eliminar transacción de SQLite
+  await deleteTransactionDB(uid, txId);
+
+  // 2. Actualizar balance del cliente en SQLite
+  const client = await getClientById(uid, clientId);
+  if (client) {
+    await updateClient(uid, clientId, {
+      balance: (client.balance || 0) + balanceChange,
+    });
+  }
+
+  // 3. Actualizar totales del usuario en SQLite
+  await updateUserDataField(uid, totalField, -amount);
+
+  // 4. Encolar en outbox
   await addToOutbox(`users/${uid}/clients/${clientId}/transactions`, txId, null, 'delete');
   await addToOutbox(`users/${uid}/clients`, clientId, { balance: `INCREMENT_${balanceChange}` }, 'update');
   await addToOutbox('users', uid, { [totalField]: `INCREMENT_${-amount}` }, 'update');
-
-  // 2. Actualizar caché de transacciones
-  const cachedTxs = await getCache(`clientTx_${clientId}_${uid}`);
-  if (cachedTxs) {
-    await setCache(`clientTx_${clientId}_${uid}`, cachedTxs.filter((t) => t.id !== txId));
-  }
-
-  // 3. Actualizar caché del cliente
-  const cachedClient = await getCache(`client_${clientId}_${uid}`);
-  if (cachedClient) {
-    await setCache(`client_${clientId}_${uid}`, {
-      ...cachedClient,
-      balance: (cachedClient.balance || 0) + balanceChange,
-    });
-  }
 
   return { balanceChange, totalField };
 };
 
 
 /**
- * Elimina un cliente y todas sus transacciones.
- *
- * @param {object} params
- * @param {string} params.uid
- * @param {string} params.clientId
- * @param {Array}  params.transactions  - Lista de transacciones actuales del cliente
- *
- * @returns {{ totalPaymentReverted: number, totalDebtReverted: number }}
+ * Elimina un cliente y todas sus transacciones:
+ * 1. Elimina de SQLite
+ * 2. Encola en outbox para Firebase
  */
 export const deleteClient = async ({ uid, clientId, transactions }) => {
   let totalPaymentReverted = 0;
   let totalDebtReverted = 0;
 
-  // Encolar eliminación de cada transacción
-  transactions.forEach((tx) => {
+  // Calcular totales a revertir y encolar eliminación de cada transacción
+  for (const tx of transactions) {
     if (tx.type === 'payment') totalPaymentReverted += tx.amount;
     else totalDebtReverted += tx.amount;
     addToOutbox(`users/${uid}/clients/${clientId}/transactions`, tx.id, null, 'delete');
-  });
+  }
 
-  // Revertir totales globales del usuario
+  // Revertir totales globales del usuario en SQLite
+  if (totalPaymentReverted > 0) await updateUserDataField(uid, 'totalPayment', -totalPaymentReverted);
+  if (totalDebtReverted > 0) await updateUserDataField(uid, 'totalDebt', -totalDebtReverted);
+
+  // Eliminar cliente y sus transacciones de SQLite (la función borra en cascada)
+  await deleteClientDB(uid, clientId);
+
+  // Encolar en outbox
   await addToOutbox('users', uid, {
     totalPayment: `INCREMENT_${-totalPaymentReverted}`,
     totalDebt: `INCREMENT_${-totalDebtReverted}`,
   }, 'update');
-
-  // Encolar eliminación del cliente
   await addToOutbox(`users/${uid}/clients`, clientId, null, 'delete');
-
-  // Actualizar caché de la lista de clientes
-  const cachedClients = (await getCache(`clients_${uid}`)) || [];
-  await setCache(`clients_${uid}`, cachedClients.filter((c) => c.id !== clientId));
 
   return { totalPaymentReverted, totalDebtReverted };
 };
