@@ -1,6 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getReactNativePersistence, initializeAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -14,14 +12,6 @@ const firebaseConfig = {
 
 // Evitar inicializar la app múltiples veces en Fast Refresh
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-
-// Evitar inicializar auth múltiples veces persistiendo la instancia en el objeto global
-if (!global.firebase_auth) {
-  global.firebase_auth = initializeAuth(app, {
-    persistence: getReactNativePersistence(AsyncStorage),
-  });
-}
-export const auth = global.firebase_auth;
 
 // Evitar inicializar Firestore múltiples veces persistiendo la instancia en el objeto global
 if (!global.firebase_db) {

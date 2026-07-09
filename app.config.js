@@ -50,9 +50,9 @@ export default {
           "image": "./assets/images/ios-app-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#72B5F5",
+          "backgroundColor": "#84c3fa",
           "dark": {
-            "backgroundColor": "#72B5F5"
+            "backgroundColor": "#84c3fa"
           }
         }
       ],
@@ -61,7 +61,10 @@ export default {
         {
           "iosUrlScheme": "com.googleusercontent.apps.131808356586-3dim5m5b3ooa2taee0iqnoestl26biha"
         }
-      ]
+      ],
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "./plugins/withFirebaseNonModularHeaders"
     ],
     "experiments": {
       "typedRoutes": true,

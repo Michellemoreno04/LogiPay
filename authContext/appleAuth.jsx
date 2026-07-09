@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import { OAuthProvider, signInWithCredential } from 'firebase/auth';
+import { getAuth, signInWithCredential, OAuthProvider } from '@react-native-firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../firebaseConfig/config';
+import { db } from '../firebaseConfig/config';
 import { useAuth } from './authContext';
 import { Alert } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -39,13 +39,12 @@ export const useAppleAuth = () => {
         throw new Error('No identity token provided.');
       }
 
-      const provider = new OAuthProvider('apple.com');
-      const credential = provider.credential({
+      // Usar @react-native-firebase/auth (SDK nativo)
+      const firebaseCredential = new OAuthProvider('apple.com').credential({
         idToken: identityToken,
         rawNonce: nonce,
       });
-
-      const userCredential = await signInWithCredential(auth, credential);
+      const userCredential = await signInWithCredential(getAuth(), firebaseCredential);
       const user = userCredential.user;
 
       const userRef = doc(db, 'users', user.uid);

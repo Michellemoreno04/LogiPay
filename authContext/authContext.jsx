@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, signOut } from '@react-native-firebase/auth';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { auth, db } from '../firebaseConfig/config';
+import { db } from '../firebaseConfig/config';
 import { useRouter } from 'expo-router';
 import { Alert } from 'react-native';
 import { getUserData, saveUserData } from '../utils/database';
@@ -23,7 +23,7 @@ export default function AuthProvider({ children }) {
   useEffect(() => {
     let unsubscribeUserDoc = null;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribeAuth = onAuthStateChanged(getAuth(), async (currentUser) => {
       setUser(currentUser);
 
       // Limpiar listener anterior
@@ -89,7 +89,7 @@ export default function AuthProvider({ children }) {
         text: 'Sí',
         onPress: async () => {
           try {
-            await signOut(auth);
+            await signOut(getAuth());
             router.replace('/welcome');
           } catch (error) {
             console.error('Error signing out:', error);

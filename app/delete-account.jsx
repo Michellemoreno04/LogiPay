@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../authContext/authContext';
-import { EmailAuthProvider, reauthenticateWithCredential, deleteUser } from 'firebase/auth';
+import { getAuth, EmailAuthProvider, reauthenticateWithCredential, deleteUser } from '@react-native-firebase/auth';
 import { doc, deleteDoc } from 'firebase/firestore';
-import { auth, db } from '../firebaseConfig/config';
+import { db } from '../firebaseConfig/config';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function DeleteAccountScreen() {
@@ -32,14 +32,15 @@ export default function DeleteAccountScreen() {
             try {
               // 1. Re-autenticar al usuario (Firebase requiere login reciente para borrar cuenta)
               const credential = EmailAuthProvider.credential(user.email, password);
-              await reauthenticateWithCredential(auth.currentUser, credential);
+              const currentUser = getAuth().currentUser;
+              await reauthenticateWithCredential(currentUser, credential);
 
               // 2. Eliminar datos de Firestore
               const userRef = doc(db, "users", user.uid);
               await deleteDoc(userRef);
 
               // 3. Eliminar usuario de Firebase Auth
-              await deleteUser(auth.currentUser);
+              await deleteUser(currentUser);
 
               // 4. Limpiar estado local y redirigir
               Alert.alert("Cuenta eliminada", "Tu cuenta ha sido eliminada correctamente.");

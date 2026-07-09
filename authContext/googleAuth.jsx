@@ -3,12 +3,12 @@ import {
   isErrorWithCode,
   statusCodes,
 } from '@react-native-google-signin/google-signin';
+import { getAuth, signInWithCredential, GoogleAuthProvider } from '@react-native-firebase/auth';
 import { useRouter } from 'expo-router';
-import { GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useState } from 'react';
 import { Alert } from 'react-native';
-import { auth, db } from '../firebaseConfig/config';
+import { db } from '../firebaseConfig/config';
 import { useAuth } from './authContext';
 
 export const useGoogleAuth = () => {
@@ -44,8 +44,9 @@ export const useGoogleAuth = () => {
         throw new Error('No se recibió el token de Google.');
       }
 
-      const credential = GoogleAuthProvider.credential(idToken);
-      const userCredential = await signInWithCredential(auth, credential);
+      // Usar @react-native-firebase/auth (SDK nativo) en vez del JS SDK
+      const googleCredential = GoogleAuthProvider.credential(idToken);
+      const userCredential = await signInWithCredential(getAuth(), googleCredential);
       const user = userCredential.user;
 
       const userRef = doc(db, 'users', user.uid);
@@ -89,7 +90,7 @@ export const useGoogleAuth = () => {
         }
       } else {
 
-        Alert.alert("Error", `Ocurrió un problema inesperado al iniciar sesiónintenta de nuevo mas tarde`);
+        Alert.alert("Error", `Ocurrió un problema inesperado al iniciar sesión, intenta de nuevo mas tarde`);
       }
     } finally {
       setLoading(false);
@@ -98,3 +99,4 @@ export const useGoogleAuth = () => {
 
   return { handleGoogleLogin, loading };
 };
+
