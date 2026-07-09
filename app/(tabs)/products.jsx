@@ -20,9 +20,10 @@ import ProductModal from '../../components/modales/ProductModal';
 import { useLocalData } from '../../context/LocalDataContext';
 import { useAuth } from '../../authContext/authContext';
 import { createProduct, deleteProduct, editProduct as editProductService } from '../../utils/productService';
+import { getSalesByProduct } from '../../utils/database';
 
 export default function ProductsScreen() {
-  const { user } = useAuth();
+  const { user, userData, updateLocalUserData } = useAuth();
   const {
     products,
     loadingProducts,
@@ -93,9 +94,19 @@ export default function ProductsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              const sales = await getSalesByProduct(user.uid, product.id);
+              let debtToRevert = 0;
+              sales.forEach(s => debtToRevert += (s.totalAmount || 0));
+
               await deleteProduct({ uid: user.uid, productId: product.id });
               deleteProductOptimistic(product.id);
+              
+              if (updateLocalUserData && debtToRevert > 0) {
+                updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) - debtToRevert });
+              }
+
               DeviceEventEmitter.emit('products-db-changed');
+              DeviceEventEmitter.emit('local-db-changed');
             } catch (e) {
               Alert.alert('Error', 'No se pudo eliminar el producto.');
             }

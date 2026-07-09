@@ -4,11 +4,19 @@ import {
   addToOutbox,
   deleteProductDB,
   deleteSaleDB,
+  getClientById,
   getProductById,
   insertProduct,
   insertSale,
+  insertTransaction,
+  updateClient,
   updateProduct,
+  updateUserDataField,
+  getTransactionsByClient,
+  deleteTransactionDB,
+  getSalesByProduct
 } from './database';
+
 
 const formatSaleDate = (date) => {
   const dateStr = date.toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -67,6 +75,26 @@ export const editProduct = async ({ uid, productId, name, price, description, st
  * Elimina un producto y todas sus ventas.
  */
 export const deleteProduct = async ({ uid, productId }) => {
+  // Revertir deudas de todas las ventas asociadas
+  const sales = await getSalesByProduct(uid, productId);
+  for (const sale of sales) {
+    if (sale.clientId && sale.totalAmount) {
+      const txs = await getTransactionsByClient(uid, sale.clientId);
+      const tx = txs.find(t => t.type === 'debt' && t.amount === sale.totalAmount);
+      if (tx) {
+        const client = await getClientById(uid, sale.clientId);
+        if (client) {
+          await updateClient(uid, sale.clientId, { balance: (client.balance || 0) + sale.totalAmount });
+          await addToOutbox(`users/${uid}/clients`, sale.clientId, { balance: `INCREMENT_${sale.totalAmount}` }, 'update');
+        }
+        await updateUserDataField(uid, 'totalDebt', -sale.totalAmount);
+        await addToOutbox('users', uid, { totalDebt: `INCREMENT_${-sale.totalAmount}` }, 'update');
+        await deleteTransactionDB(uid, tx.id);
+        await addToOutbox(`users/${uid}/clients/${sale.clientId}/transactions`, tx.id, null, 'delete');
+      }
+    }
+  }
+
   await deleteProductDB(uid, productId);
   await addToOutbox(`users/${uid}/products`, productId, null, 'delete');
 };
@@ -75,13 +103,19 @@ export const deleteProduct = async ({ uid, productId }) => {
 
 /**
  * Registra una venta:
- * 1. Guarda en SQLite
- * 2. Actualiza stock del producto si aplica
- * 3. Encola en outbox para Firebase
+ * 1. Guarda la venta en SQLite
+ * 2. Crea una transacción de deuda (debt) para el cliente en SQLite
+ * 3. Actualiza el balance del cliente y el totalDebt del usuario
+ * 4. Actualiza el stock del producto si aplica
+ * 5. Encola todo en outbox para Firebase
  */
-export const recordSale = async ({ uid, productId, clientId, clientName, quantity, unitPrice }) => {
+export const recordSale = async ({ uid, productId, productName, clientId, clientName, quantity, unitPrice }) => {
   const salesRef = collection(db, 'users', uid, 'products', productId, 'sales');
   const saleId = doc(salesRef).id;
+
+  const txRef = collection(db, 'users', uid, 'clients', clientId, 'transactions');
+  const txId = doc(txRef).id;
+
   const now = Date.now();
   const parsedQty = parseFloat(quantity) || 1;
   const parsedPrice = parseFloat(unitPrice) || 0;
@@ -101,15 +135,41 @@ export const recordSale = async ({ uid, productId, clientId, clientName, quantit
     createdAt: now,
   });
 
-  // 2. Actualizar stock si el producto lo maneja (stock >= 0)
+  // 2. Crear transacción de deuda para el cliente en SQLite
+  //    (mismo flujo que addTransaction en clientService.js)
+  const txTitle = `Compra: ${productName || 'Producto'}`;
+  await insertTransaction(uid, {
+    id: txId,
+    clientId,
+    type: 'debt',
+    amount: totalAmount,
+    title: txTitle,
+    description: txTitle,
+    date,
+    createdAt: now,
+  });
+
+  // 3. Actualizar balance del cliente en SQLite (deuda = balance negativo)
+  const client = await getClientById(uid, clientId);
+  if (client) {
+    await updateClient(uid, clientId, {
+      balance: (client.balance || 0) - totalAmount,
+    });
+  }
+
+  // 4. Actualizar totalDebt del usuario en SQLite
+  await updateUserDataField(uid, 'totalDebt', totalAmount);
+
+  // 5. Actualizar stock si el producto lo maneja (stock >= 0)
   const product = await getProductById(uid, productId);
+  let newStock = -1;
   if (product && product.stock >= 0) {
-    const newStock = Math.max(0, product.stock - parsedQty);
+    newStock = Math.max(0, product.stock - parsedQty);
     await updateProduct(uid, productId, { stock: newStock });
     await addToOutbox(`users/${uid}/products`, productId, { stock: newStock }, 'update');
   }
 
-  // 3. Encolar venta en outbox
+  // 6. Encolar venta en outbox
   await addToOutbox(
     `users/${uid}/products/${productId}/sales`,
     saleId,
@@ -125,18 +185,39 @@ export const recordSale = async ({ uid, productId, clientId, clientName, quantit
     'set'
   );
 
+  // 7. Encolar transacción de deuda en outbox
+  await addToOutbox(
+    `users/${uid}/clients/${clientId}/transactions`,
+    txId,
+    { type: 'debt', amount: totalAmount, title: txTitle, description: txTitle, createdAt: 'SERVER_TIMESTAMP' },
+    'set'
+  );
+
+  // 8. Encolar actualización de balance del cliente en outbox
+  await addToOutbox(
+    `users/${uid}/clients`,
+    clientId,
+    { balance: `INCREMENT_${-totalAmount}` },
+    'update'
+  );
+
+  // 9. Encolar actualización de totalDebt del usuario en outbox
+  await addToOutbox('users', uid, { totalDebt: `INCREMENT_${totalAmount}` }, 'update');
+
   return {
     saleId,
+    txId,
     totalAmount,
     date,
-    newStock: product?.stock >= 0 ? Math.max(0, product.stock - parsedQty) : -1,
+    newStock,
   };
 };
 
 /**
- * Elimina una venta y revierte el stock.
+ * Elimina una venta y revierte la deuda del cliente y el stock.
  */
-export const deleteSale = async ({ uid, productId, saleId, quantity }) => {
+
+export const deleteSale = async ({ uid, productId, saleId, quantity, clientId, totalAmount }) => {
   await deleteSaleDB(uid, saleId);
 
   // Revertir stock si aplica
@@ -145,6 +226,23 @@ export const deleteSale = async ({ uid, productId, saleId, quantity }) => {
     const newStock = product.stock + (parseFloat(quantity) || 0);
     await updateProduct(uid, productId, { stock: newStock });
     await addToOutbox(`users/${uid}/products`, productId, { stock: newStock }, 'update');
+  }
+
+  // Revertir deuda del cliente y totalDebt
+  if (clientId && totalAmount) {
+    const txs = await getTransactionsByClient(uid, clientId);
+    const tx = txs.find(t => t.type === 'debt' && t.amount === totalAmount);
+    if (tx) {
+      const client = await getClientById(uid, clientId);
+      if (client) {
+        await updateClient(uid, clientId, { balance: (client.balance || 0) + totalAmount });
+        await addToOutbox(`users/${uid}/clients`, clientId, { balance: `INCREMENT_${totalAmount}` }, 'update');
+      }
+      await updateUserDataField(uid, 'totalDebt', -totalAmount);
+      await addToOutbox('users', uid, { totalDebt: `INCREMENT_${-totalAmount}` }, 'update');
+      await deleteTransactionDB(uid, tx.id);
+      await addToOutbox(`users/${uid}/clients/${clientId}/transactions`, tx.id, null, 'delete');
+    }
   }
 
   await addToOutbox(`users/${uid}/products/${productId}/sales`, saleId, null, 'delete');

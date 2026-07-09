@@ -10,26 +10,17 @@ import { collection, getDocs, onSnapshot, orderBy, query } from 'firebase/firest
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../authContext/authContext';
 import { db as firestore } from '../firebaseConfig/config';
+import { bootstrapFromFirebase } from '../utils/bootstrapSync';
 import {
-  deleteClientDB,
-  deleteTransactionDB,
   getClients,
   getProducts,
   getRecentActivity,
   getRecentSales,
-  getRecentTransactions,
-  getTransactionsByClient,
   initDB,
   insertClient,
-  insertProduct,
-  insertSale,
   insertTransaction,
   migrateFromLegacyCache,
-  updateClient,
-  updateProduct,
-  updateTransaction,
 } from '../utils/database';
-import { bootstrapFromFirebase } from '../utils/bootstrapSync';
 import { syncOutbox } from '../utils/syncEngine';
 
 const LocalDataContext = createContext(null);
@@ -377,12 +368,12 @@ export function LocalDataProvider({ children }) {
       prev.map((p) =>
         p.id === productId
           ? {
-              ...p,
-              name,
-              price: parseFloat(price) || 0,
-              description: description || '',
-              stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
-            }
+            ...p,
+            name,
+            price: parseFloat(price) || 0,
+            description: description || '',
+            stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
+          }
           : p
       )
     );

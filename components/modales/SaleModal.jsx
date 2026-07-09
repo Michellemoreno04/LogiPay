@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useAlert } from '../../context/AlertContext';
 
 /**
  * Modal para registrar una venta de un producto.
@@ -29,6 +30,8 @@ export default function SaleModal({ visible, onClose, onSave, product, clients =
   const [quantity, setQuantity] = useState('1');
   const [searchQuery, setSearchQuery] = useState('');
   const [showClientPicker, setShowClientPicker] = useState(false);
+
+  const { showAlert } = useAlert();
 
   const slideAnim = useRef(new Animated.Value(700)).current;
   const backdropAnim = useRef(new Animated.Value(0)).current;
@@ -97,12 +100,19 @@ export default function SaleModal({ visible, onClose, onSave, product, clients =
 
   const handleSave = () => {
     if (!isValid) return;
-    onSave({
-      clientId: selectedClient.id,
-      clientName: selectedClient.name,
-      quantity: parsedQty,
-      unitPrice,
-    });
+    try {
+      onSave({
+        clientId: selectedClient.id,
+        clientName: selectedClient.name,
+        quantity: parsedQty,
+        unitPrice,
+      });
+      showAlert("Venta registrada exitosamente", "success");
+    } catch (error) {
+      showAlert("Error al registrar la venta", "error");
+    }
+
+
   };
 
   return (
@@ -117,184 +127,184 @@ export default function SaleModal({ visible, onClose, onSave, product, clients =
           { transform: [{ translateY: slideAnim }, { translateY: keyboardOffset }] },
         ]}
       >
-          {/* Header */}
-          <LinearGradient
-            colors={['#1A4B2F', '#2D8C5A']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.header}
-          >
-            <View style={styles.headerContent}>
-              <View style={styles.headerIcon}>
-                <Ionicons name="cart" size={22} color="#fff" />
-              </View>
-              <View>
-                <Text style={styles.headerTitle}>Registrar Venta</Text>
-                {product && (
-                  <Text style={styles.headerSubtitle} numberOfLines={1}>
-                    {product.name} · ${unitPrice.toFixed(2)}
-                  </Text>
-                )}
-              </View>
+        {/* Header */}
+        <LinearGradient
+          colors={['#1A4B2F', '#2D8C5A']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
+          <View style={styles.headerContent}>
+            <View style={styles.headerIcon}>
+              <Ionicons name="cart" size={22} color="#fff" />
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={22} color="rgba(255,255,255,0.7)" />
-            </TouchableOpacity>
-          </LinearGradient>
-
-          <View style={styles.body}>
-            {/* Stock badge */}
-            {product?.stock >= 0 && (
-              <View style={styles.stockBadgeRow}>
-                <View style={[styles.stockBadge, product.stock === 0 && styles.stockBadgeEmpty]}>
-                  <Ionicons
-                    name="layers"
-                    size={14}
-                    color={product.stock > 0 ? '#2D8C5A' : '#FF3B30'}
-                  />
-                  <Text style={[styles.stockBadgeText, product.stock === 0 && styles.stockBadgeTextEmpty]}>
-                    {product.stock > 0 ? `${product.stock} en stock` : 'Sin stock'}
-                  </Text>
-                </View>
-              </View>
-            )}
-
-            {/* Seleccionar cliente */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Cliente *</Text>
-              <TouchableOpacity
-                style={styles.clientPickerBtn}
-                onPress={() => setShowClientPicker((v) => !v)}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="person-circle-outline" size={20} color="#4C669F" style={{ marginRight: 10 }} />
-                <Text style={[styles.clientPickerText, !selectedClient && styles.placeholderText]}>
-                  {selectedClient ? selectedClient.name : 'Seleccionar cliente...'}
+            <View>
+              <Text style={styles.headerTitle}>Registrar Venta</Text>
+              {product && (
+                <Text style={styles.headerSubtitle} numberOfLines={1}>
+                  {product.name} · ${unitPrice.toFixed(2)}
                 </Text>
-                <Ionicons
-                  name={showClientPicker ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color="#8E8E93"
-                />
-              </TouchableOpacity>
-
-              {showClientPicker && (
-                <View style={styles.clientDropdown}>
-                  <View style={styles.searchWrapper}>
-                    <Ionicons name="search" size={16} color="#8E8E93" />
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder="Buscar cliente..."
-                      placeholderTextColor="#C0C0C8"
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                      autoFocus
-                    />
-                  </View>
-                  <FlatList
-                    data={filteredClients}
-                    keyExtractor={(item) => item.id}
-                    style={{ maxHeight: 180 }}
-                    keyboardShouldPersistTaps="handled"
-                    ListEmptyComponent={
-                      <Text style={styles.emptyClients}>No se encontraron clientes</Text>
-                    }
-                    renderItem={({ item }) => (
-                      <TouchableOpacity
-                        style={[
-                          styles.clientOption,
-                          selectedClient?.id === item.id && styles.clientOptionSelected,
-                        ]}
-                        onPress={() => {
-                          setSelectedClient(item);
-                          setShowClientPicker(false);
-                          setSearchQuery('');
-                        }}
-                      >
-                        <View style={styles.clientOptionAvatar}>
-                          <Text style={styles.clientOptionAvatarText}>
-                            {(item.name || '?')[0].toUpperCase()}
-                          </Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.clientOptionName}>{item.name}</Text>
-                          {item.phone ? (
-                            <Text style={styles.clientOptionPhone}>{item.phone}</Text>
-                          ) : null}
-                        </View>
-                        {selectedClient?.id === item.id && (
-                          <Ionicons name="checkmark-circle" size={20} color="#2D8C5A" />
-                        )}
-                      </TouchableOpacity>
-                    )}
-                  />
-                </View>
               )}
-            </View>
-
-            {/* Cantidad */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Cantidad *</Text>
-              <View style={styles.quantityRow}>
-                <TouchableOpacity
-                  style={styles.qtyBtn}
-                  onPress={() => setQuantity((q) => String(Math.max(1, (parseFloat(q) || 1) - 1)))}
-                >
-                  <Ionicons name="remove" size={22} color="#4C669F" />
-                </TouchableOpacity>
-                <View style={styles.qtyInputWrapper}>
-                  <TextInput
-                    style={styles.qtyInput}
-                    value={quantity}
-                    onChangeText={setQuantity}
-                    keyboardType="decimal-pad"
-                    textAlign="center"
-                  />
-                </View>
-                <TouchableOpacity
-                  style={styles.qtyBtn}
-                  onPress={() => setQuantity((q) => String((parseFloat(q) || 0) + 1))}
-                >
-                  <Ionicons name="add" size={22} color="#4C669F" />
-                </TouchableOpacity>
-              </View>
-              {product?.stock >= 0 && parsedQty > product.stock && (
-                <Text style={styles.stockWarning}>⚠️ Cantidad supera el stock disponible</Text>
-              )}
-            </View>
-
-            {/* Total */}
-            <View style={styles.totalCard}>
-              <Text style={styles.totalLabel}>Total de la venta</Text>
-              <Text style={styles.totalAmount}>${total.toFixed(2)}</Text>
-              <Text style={styles.totalDetail}>
-                {parsedQty} × ${unitPrice.toFixed(2)}
-              </Text>
-            </View>
-
-            {/* Botones */}
-            <View style={styles.actions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={loading}>
-                <Text style={styles.cancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveBtn, !isValid && styles.saveBtnDisabled]}
-                onPress={handleSave}
-                disabled={!isValid || loading}
-              >
-                <LinearGradient
-                  colors={isValid ? ['#2D8C5A', '#1A4B2F'] : ['#C0C0C8', '#A0A0A8']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.saveBtnGradient}
-                >
-                  <Ionicons name="cart" size={20} color="#fff" />
-                  <Text style={styles.saveText}>Confirmar Venta</Text>
-                </LinearGradient>
-              </TouchableOpacity>
             </View>
           </View>
-        </Animated.View>
+          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <Ionicons name="close" size={22} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
+        </LinearGradient>
+
+        <View style={styles.body}>
+          {/* Stock badge */}
+          {product?.stock >= 0 && (
+            <View style={styles.stockBadgeRow}>
+              <View style={[styles.stockBadge, product.stock === 0 && styles.stockBadgeEmpty]}>
+                <Ionicons
+                  name="layers"
+                  size={14}
+                  color={product.stock > 0 ? '#2D8C5A' : '#FF3B30'}
+                />
+                <Text style={[styles.stockBadgeText, product.stock === 0 && styles.stockBadgeTextEmpty]}>
+                  {product.stock > 0 ? `${product.stock} en stock` : 'Sin stock'}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Seleccionar cliente */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Cliente *</Text>
+            <TouchableOpacity
+              style={styles.clientPickerBtn}
+              onPress={() => setShowClientPicker((v) => !v)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="person-circle-outline" size={20} color="#4C669F" style={{ marginRight: 10 }} />
+              <Text style={[styles.clientPickerText, !selectedClient && styles.placeholderText]}>
+                {selectedClient ? selectedClient.name : 'Seleccionar cliente...'}
+              </Text>
+              <Ionicons
+                name={showClientPicker ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color="#8E8E93"
+              />
+            </TouchableOpacity>
+
+            {showClientPicker && (
+              <View style={styles.clientDropdown}>
+                <View style={styles.searchWrapper}>
+                  <Ionicons name="search" size={16} color="#8E8E93" />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Buscar cliente..."
+                    placeholderTextColor="#C0C0C8"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    autoFocus
+                  />
+                </View>
+                <FlatList
+                  data={filteredClients}
+                  keyExtractor={(item) => item.id}
+                  style={{ maxHeight: 180 }}
+                  keyboardShouldPersistTaps="handled"
+                  ListEmptyComponent={
+                    <Text style={styles.emptyClients}>No se encontraron clientes</Text>
+                  }
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      style={[
+                        styles.clientOption,
+                        selectedClient?.id === item.id && styles.clientOptionSelected,
+                      ]}
+                      onPress={() => {
+                        setSelectedClient(item);
+                        setShowClientPicker(false);
+                        setSearchQuery('');
+                      }}
+                    >
+                      <View style={styles.clientOptionAvatar}>
+                        <Text style={styles.clientOptionAvatarText}>
+                          {(item.name || '?')[0].toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.clientOptionName}>{item.name}</Text>
+                        {item.phone ? (
+                          <Text style={styles.clientOptionPhone}>{item.phone}</Text>
+                        ) : null}
+                      </View>
+                      {selectedClient?.id === item.id && (
+                        <Ionicons name="checkmark-circle" size={20} color="#2D8C5A" />
+                      )}
+                    </TouchableOpacity>
+                  )}
+                />
+              </View>
+            )}
+          </View>
+
+          {/* Cantidad */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Cantidad *</Text>
+            <View style={styles.quantityRow}>
+              <TouchableOpacity
+                style={styles.qtyBtn}
+                onPress={() => setQuantity((q) => String(Math.max(1, (parseFloat(q) || 1) - 1)))}
+              >
+                <Ionicons name="remove" size={22} color="#4C669F" />
+              </TouchableOpacity>
+              <View style={styles.qtyInputWrapper}>
+                <TextInput
+                  style={styles.qtyInput}
+                  value={quantity}
+                  onChangeText={setQuantity}
+                  keyboardType="decimal-pad"
+                  textAlign="center"
+                />
+              </View>
+              <TouchableOpacity
+                style={styles.qtyBtn}
+                onPress={() => setQuantity((q) => String((parseFloat(q) || 0) + 1))}
+              >
+                <Ionicons name="add" size={22} color="#4C669F" />
+              </TouchableOpacity>
+            </View>
+            {product?.stock >= 0 && parsedQty > product.stock && (
+              <Text style={styles.stockWarning}>⚠️ Cantidad supera el stock disponible</Text>
+            )}
+          </View>
+
+          {/* Total */}
+          <View style={styles.totalCard}>
+            <Text style={styles.totalLabel}>Total de la venta</Text>
+            <Text style={styles.totalAmount}>${total.toFixed(2)}</Text>
+            <Text style={styles.totalDetail}>
+              {parsedQty} × ${unitPrice.toFixed(2)}
+            </Text>
+          </View>
+
+          {/* Botones */}
+          <View style={styles.actions}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={loading}>
+              <Text style={styles.cancelText}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.saveBtn, !isValid && styles.saveBtnDisabled]}
+              onPress={handleSave}
+              disabled={!isValid || loading}
+            >
+              <LinearGradient
+                colors={isValid ? ['#2D8C5A', '#1A4B2F'] : ['#C0C0C8', '#A0A0A8']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.saveBtnGradient}
+              >
+                <Ionicons name="cart" size={20} color="#fff" />
+                <Text style={styles.saveText}>Confirmar Venta</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Animated.View>
     </Modal>
   );
 }

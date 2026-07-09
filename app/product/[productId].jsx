@@ -23,8 +23,9 @@ import { getSalesByProduct } from '../../utils/database';
 
 export default function ProductDetailScreen() {
   const { productId } = useLocalSearchParams();
-  const { user } = useAuth();
-  const { products, clients, addSaleOptimistic, deleteSaleOptimistic } = useLocalData();
+  const { user, userData, updateLocalUserData } = useAuth();
+  const { products, clients, addSaleOptimistic, deleteSaleOptimistic, addTransactionOptimistic } = useLocalData();
+
 
   const product = products.find((p) => p.id === productId);
 
@@ -68,11 +69,14 @@ export default function ProductDetailScreen() {
       const result = await recordSale({
         uid: user.uid,
         productId,
+        productName: product?.name || '',
         clientId,
         clientName,
         quantity,
         unitPrice,
       });
+
+      // Actualización optimista de la venta (activity feed + stock)
       addSaleOptimistic({
         saleId: result.saleId,
         productId,
@@ -85,8 +89,26 @@ export default function ProductDetailScreen() {
         newStock: result.newStock,
         productName: product?.name || '',
       });
+
+      // Actualización optimista de la transacción de deuda del cliente
+      // (actualiza balance del cliente en memoria)
+      addTransactionOptimistic({
+        txId: result.txId,
+        clientId,
+        clientName,
+        type: 'debt',
+        amount: result.totalAmount,
+        title: `Compra: ${product?.name || 'Producto'}`,
+        description: `Compra: ${product?.name || 'Producto'}`,
+      });
+
+      // Actualizar totalDebt en AuthContext inmediatamente
+      // (esto actualiza el 'Monto total por cobrar' en home sin reiniciar)
+      updateLocalUserData({
+        totalDebt: (userData?.totalDebt || 0) + result.totalAmount,
+      });
+
       DeviceEventEmitter.emit('products-db-changed');
-      DeviceEventEmitter.emit('local-db-changed'); // refresca home
       setSaleModalVisible(false);
       await loadSales();
     } catch (e) {
@@ -96,6 +118,7 @@ export default function ProductDetailScreen() {
       setSavingSale(false);
     }
   };
+
 
   const handleDeleteSale = (sale) => {
     Alert.alert(
@@ -108,9 +131,13 @@ export default function ProductDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteSale({ uid: user.uid, productId, saleId: sale.id, quantity: sale.quantity });
+              await deleteSale({ uid: user.uid, productId, saleId: sale.id, quantity: sale.quantity, clientId: sale.clientId, totalAmount: sale.totalAmount });
               deleteSaleOptimistic({ saleId: sale.id, productId, quantity: sale.quantity });
+              if (updateLocalUserData && sale.totalAmount) {
+                updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) - sale.totalAmount });
+              }
               DeviceEventEmitter.emit('products-db-changed');
+              DeviceEventEmitter.emit('local-db-changed');
               await loadSales();
             } catch (e) {
               Alert.alert('Error', 'No se pudo eliminar la venta.');
