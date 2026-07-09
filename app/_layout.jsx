@@ -102,6 +102,7 @@ function RootLayoutNav() {
         <Stack.Screen name="all-transactions" options={{ title: "Todas las Transacciones", presentation: 'modal' }} />
         <Stack.Screen name="delete-account" options={{ title: "Eliminar Cuenta", presentation: 'modal' }} />
         <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
+        <Stack.Screen name="product/[productId]" options={{ headerShown: false }} />
 
       </Stack>
     </>

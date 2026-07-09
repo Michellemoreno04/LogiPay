@@ -27,32 +27,36 @@ const numberFormatter = new Intl.NumberFormat('en-US', {
 
 export default function ActivityItem({ item }) {
   const isPayment = item.type === 'payment';
+  const isSale = item.type === 'sale';
+
+  // Color palette per type
+  const palette = isSale
+    ? { bg: '#FFF8EC', icon: '#FF9500', text: '#FF9500', bar: '#FF9500' }
+    : isPayment
+    ? { bg: '#ECFDF3', icon: '#34C759', text: '#34C759', bar: '#34C759' }
+    : { bg: '#FFF1F0', icon: '#FF3B30', text: '#FF3B30', bar: '#FF3B30' };
+
+  const iconName = isSale
+    ? 'cart'
+    : isPayment
+    ? 'arrow-up-circle'
+    : 'arrow-down-circle';
+
+  const badgeLabel = isSale ? 'Venta' : isPayment ? 'Abono' : 'Cargo';
+
+  const amountPrefix = isSale ? '' : isPayment ? '+' : '-';
 
   return (
     <TouchableOpacity
       style={styles.activityItem}
       activeOpacity={0.65}
-      onPress={() => item.clientId !== 'global' && router.push(`/${item.clientId}`)}
+      onPress={() => item.clientId && item.clientId !== 'global' && router.push(`/${item.clientId}`)}
     >
       {/* Left accent bar */}
-      <View
-        style={[
-          styles.accentBar,
-          { backgroundColor: isPayment ? '#34C759' : '#FF3B30' },
-        ]}
-      />
+      <View style={[styles.accentBar, { backgroundColor: palette.bar }]} />
 
-      <View style={[
-        styles.activityIconBg,
-        {
-          backgroundColor: isPayment ? '#ECFDF3' : '#FFF1F0',
-        }
-      ]}>
-        <Ionicons
-          name={isPayment ? 'arrow-up-circle' : 'arrow-down-circle'}
-          size={22}
-          color={isPayment ? '#34C759' : '#FF3B30'}
-        />
+      <View style={[styles.activityIconBg, { backgroundColor: palette.bg }]}>
+        <Ionicons name={iconName} size={22} color={palette.icon} />
       </View>
 
       <View style={styles.activityInfo}>
@@ -60,7 +64,9 @@ export default function ActivityItem({ item }) {
           {item.clientName}
         </Text>
         <Text style={styles.activityDescription} numberOfLines={1}>
-          {item.description}
+          {isSale
+            ? `🛒 ${item.description || item.productName || 'Producto'}`
+            : item.description}
         </Text>
         <View style={styles.timeRow}>
           <Ionicons name="time-outline" size={11} color="#AEAEB2" />
@@ -69,21 +75,12 @@ export default function ActivityItem({ item }) {
       </View>
 
       <View style={styles.amountContainer}>
-        <Text style={[
-          styles.activityAmount,
-          { color: isPayment ? '#34C759' : '#FF3B30' }
-        ]}>
-          {isPayment ? '+' : '-'}${numberFormatter.format(item.amount) || '0.00'}
+        <Text style={[styles.activityAmount, { color: palette.text }]}>
+          {amountPrefix}${numberFormatter.format(item.amount) || '0.00'}
         </Text>
-        <View style={[
-          styles.typeBadge,
-          { backgroundColor: isPayment ? '#ECFDF3' : '#FFF1F0' },
-        ]}>
-          <Text style={[
-            styles.typeText,
-            { color: isPayment ? '#34C759' : '#FF3B30' },
-          ]}>
-            {isPayment ? 'Abono' : 'Cargo'}
+        <View style={[styles.typeBadge, { backgroundColor: palette.bg }]}>
+          <Text style={[styles.typeText, { color: palette.text }]}>
+            {badgeLabel}
           </Text>
         </View>
       </View>

@@ -69,6 +69,35 @@ export const initDB = async () => {
     );
   `);
 
+  // ── Tabla de productos ──
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS products (
+      id TEXT PRIMARY KEY,
+      uid TEXT NOT NULL,
+      name TEXT NOT NULL,
+      price REAL NOT NULL DEFAULT 0,
+      description TEXT DEFAULT '',
+      stock REAL DEFAULT -1,
+      createdAt INTEGER NOT NULL
+    );
+  `);
+
+  // ── Tabla de ventas ──
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS sales (
+      id TEXT PRIMARY KEY,
+      uid TEXT NOT NULL,
+      productId TEXT NOT NULL,
+      clientId TEXT NOT NULL,
+      clientName TEXT DEFAULT '',
+      quantity REAL NOT NULL,
+      unitPrice REAL NOT NULL,
+      totalAmount REAL NOT NULL,
+      date TEXT DEFAULT '',
+      createdAt INTEGER NOT NULL
+    );
+  `);
+
   return db;
 };
 
@@ -270,6 +299,63 @@ export const getRecentTransactions = async (uid, limit = 5) => {
   }
 };
 
+/**
+ * Actividad reciente combinada: transacciones + ventas de productos,
+ * unificadas en un mismo shape y ordenadas por fecha descendente.
+ * Shape de cada ítem:
+ *   id, type ('payment'|'debt'|'sale'), amount, clientName, clientId,
+ *   description, createdAt, _source ('transaction'|'sale'),
+ *   productName (solo si es venta)
+ */
+export const getRecentActivity = async (uid, limit = 8) => {
+  try {
+    const database = await initDB();
+    const rows = await database.getAllAsync(
+      `SELECT * FROM (
+         SELECT
+           t.id,
+           t.type,
+           t.amount,
+           c.name   AS clientName,
+           t.clientId,
+           t.title  AS description,
+           t.createdAt,
+           'transaction' AS _source,
+           NULL     AS productName
+         FROM transactions t
+         LEFT JOIN clients c ON t.clientId = c.id
+         WHERE t.uid = ?
+
+         UNION ALL
+
+         SELECT
+           s.id,
+           'sale'        AS type,
+           s.totalAmount AS amount,
+           s.clientName,
+           s.clientId,
+           p.name        AS description,
+           s.createdAt,
+           'sale'        AS _source,
+           p.name        AS productName
+         FROM sales s
+         LEFT JOIN products p ON s.productId = p.id
+         WHERE s.uid = ?
+       )
+       ORDER BY createdAt DESC
+       LIMIT ?`,
+      [uid, uid, limit]
+    );
+    return rows;
+  } catch (error) {
+    console.error('Error in getRecentActivity:', error);
+    return [];
+  }
+};
+
+
+
+
 // ─── DATOS DE USUARIO ─────────────────────────────────────────────────────────
 
 export const saveUserData = async (uid, data) => {
@@ -456,4 +542,158 @@ export const migrateFromLegacyCache = async (uid) => {
     return false;
   }
 };
+
+// ─── PRODUCTOS ────────────────────────────────────────────────────────────────
+
+export const insertProduct = async (uid, product) => {
+  try {
+    const database = await initDB();
+    await database.runAsync(
+      `INSERT OR REPLACE INTO products (id, uid, name, price, description, stock, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        product.id,
+        uid,
+        product.name,
+        product.price ?? 0,
+        product.description || '',
+        product.stock ?? -1,
+        product.createdAt ?? Date.now(),
+      ]
+    );
+  } catch (error) {
+    console.error('Error in insertProduct:', error);
+    throw error;
+  }
+};
+
+export const updateProduct = async (uid, productId, changes) => {
+  try {
+    const database = await initDB();
+    const fields = Object.keys(changes).map((k) => `${k} = ?`).join(', ');
+    const values = [...Object.values(changes), uid, productId];
+    await database.runAsync(
+      `UPDATE products SET ${fields} WHERE uid = ? AND id = ?`,
+      values
+    );
+  } catch (error) {
+    console.error('Error in updateProduct:', error);
+    throw error;
+  }
+};
+
+export const deleteProductDB = async (uid, productId) => {
+  try {
+    const database = await initDB();
+    await database.runAsync('DELETE FROM products WHERE uid = ? AND id = ?', [uid, productId]);
+    await database.runAsync('DELETE FROM sales WHERE uid = ? AND productId = ?', [uid, productId]);
+  } catch (error) {
+    console.error('Error in deleteProductDB:', error);
+    throw error;
+  }
+};
+
+export const getProducts = async (uid) => {
+  try {
+    const database = await initDB();
+    return await database.getAllAsync(
+      'SELECT * FROM products WHERE uid = ? ORDER BY createdAt DESC',
+      [uid]
+    );
+  } catch (error) {
+    console.error('Error in getProducts:', error);
+    return [];
+  }
+};
+
+export const getProductById = async (uid, productId) => {
+  try {
+    const database = await initDB();
+    return await database.getFirstAsync(
+      'SELECT * FROM products WHERE uid = ? AND id = ?',
+      [uid, productId]
+    );
+  } catch (error) {
+    console.error('Error in getProductById:', error);
+    return null;
+  }
+};
+
+// ─── VENTAS ───────────────────────────────────────────────────────────────────
+
+export const insertSale = async (uid, sale) => {
+  try {
+    const database = await initDB();
+    await database.runAsync(
+      `INSERT OR REPLACE INTO sales
+       (id, uid, productId, clientId, clientName, quantity, unitPrice, totalAmount, date, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        sale.id,
+        uid,
+        sale.productId,
+        sale.clientId,
+        sale.clientName || '',
+        sale.quantity,
+        sale.unitPrice,
+        sale.totalAmount,
+        sale.date || '',
+        sale.createdAt ?? Date.now(),
+      ]
+    );
+  } catch (error) {
+    console.error('Error in insertSale:', error);
+    throw error;
+  }
+};
+
+export const getSalesByProduct = async (uid, productId) => {
+  try {
+    const database = await initDB();
+    return await database.getAllAsync(
+      'SELECT * FROM sales WHERE uid = ? AND productId = ? ORDER BY createdAt DESC',
+      [uid, productId]
+    );
+  } catch (error) {
+    console.error('Error in getSalesByProduct:', error);
+    return [];
+  }
+};
+
+export const getAllSales = async (uid, limit = 200) => {
+  try {
+    const database = await initDB();
+    return await database.getAllAsync(
+      'SELECT s.*, p.name as productName FROM sales s LEFT JOIN products p ON s.productId = p.id WHERE s.uid = ? ORDER BY s.createdAt DESC LIMIT ?',
+      [uid, limit]
+    );
+  } catch (error) {
+    console.error('Error in getAllSales:', error);
+    return [];
+  }
+};
+
+export const getRecentSales = async (uid, limit = 5) => {
+  try {
+    const database = await initDB();
+    return await database.getAllAsync(
+      'SELECT s.*, p.name as productName FROM sales s LEFT JOIN products p ON s.productId = p.id WHERE s.uid = ? ORDER BY s.createdAt DESC LIMIT ?',
+      [uid, limit]
+    );
+  } catch (error) {
+    console.error('Error in getRecentSales:', error);
+    return [];
+  }
+};
+
+export const deleteSaleDB = async (uid, saleId) => {
+  try {
+    const database = await initDB();
+    await database.runAsync('DELETE FROM sales WHERE uid = ? AND id = ?', [uid, saleId]);
+  } catch (error) {
+    console.error('Error in deleteSaleDB:', error);
+    throw error;
+  }
+};
+
 

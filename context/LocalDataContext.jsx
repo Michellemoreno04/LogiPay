@@ -14,13 +14,19 @@ import {
   deleteClientDB,
   deleteTransactionDB,
   getClients,
+  getProducts,
+  getRecentActivity,
+  getRecentSales,
   getRecentTransactions,
   getTransactionsByClient,
   initDB,
   insertClient,
+  insertProduct,
+  insertSale,
   insertTransaction,
   migrateFromLegacyCache,
   updateClient,
+  updateProduct,
   updateTransaction,
 } from '../utils/database';
 import { bootstrapFromFirebase } from '../utils/bootstrapSync';
@@ -34,6 +40,11 @@ export function LocalDataProvider({ children }) {
   const [clients, setClientsState] = useState([]);
   const [recentActivity, setRecentActivityState] = useState([]);
   const [loadingClients, setLoadingClients] = useState(true);
+
+  // ─ Productos y Ventas ─
+  const [products, setProductsState] = useState([]);
+  const [recentSales, setRecentSalesState] = useState([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
 
   // Para compatibilidad con [id].jsx y all-transactions.jsx
   const pendingOpsRef = useRef({
@@ -72,7 +83,7 @@ export function LocalDataProvider({ children }) {
 
       // Refrescar actividad reciente despues de posible bootstrap
       if (bootstrapped) {
-        const recent = await getRecentTransactions(user.uid, 5);
+        const recent = await getRecentActivity(user.uid, 8);
         if (isMounted) {
           setRecentActivityState(recent.map(tx => ({
             ...tx,
@@ -131,7 +142,7 @@ export function LocalDataProvider({ children }) {
             if (isMounted) setClientsState(updated);
 
             // Refrescar actividad reciente
-            const recent = await getRecentTransactions(user.uid, 5);
+            const recent = await getRecentActivity(user.uid, 8);
             if (isMounted) {
               setRecentActivityState(recent.map(tx => ({
                 ...tx,
@@ -162,7 +173,7 @@ export function LocalDataProvider({ children }) {
     let isMounted = true;
 
     const loadRecent = async () => {
-      const recent = await getRecentTransactions(user.uid, 5);
+      const recent = await getRecentActivity(user.uid, 8);
       if (isMounted) {
         setRecentActivityState(
           recent.map((tx) => ({
@@ -186,6 +197,33 @@ export function LocalDataProvider({ children }) {
     };
   }, [user]);
 
+  // ─── Cargar productos y ventas recientes desde SQLite ───
+  useEffect(() => {
+    if (!user) return;
+    let isMounted = true;
+
+    const loadProducts = async () => {
+      const prods = await getProducts(user.uid);
+      const sales = await getRecentSales(user.uid, 10);
+      if (isMounted) {
+        setProductsState(prods);
+        setRecentSalesState(sales);
+        setLoadingProducts(false);
+      }
+    };
+
+    loadProducts();
+
+    const { DeviceEventEmitter } = require('react-native');
+    const sub = DeviceEventEmitter.addListener('products-db-changed', loadProducts);
+
+    return () => {
+      isMounted = false;
+      sub.remove();
+    };
+  }, [user]);
+
+
   // ─── Helpers de actualización de estado ───
 
   const updateClientsState = useCallback(async (newClients) => {
@@ -194,7 +232,7 @@ export function LocalDataProvider({ children }) {
 
   const updateRecentActivity = useCallback(async () => {
     if (!user) return;
-    const recent = await getRecentTransactions(user.uid, 5);
+    const recent = await getRecentActivity(user.uid, 8);
     setRecentActivityState(
       recent.map((tx) => ({
         ...tx,
@@ -203,6 +241,7 @@ export function LocalDataProvider({ children }) {
       }))
     );
   }, [user]);
+
 
   // ─── ACCIONES OPTIMISTAS ───
   // Estas funciones actualizan el estado en memoria de forma inmediata.
@@ -319,22 +358,121 @@ export function LocalDataProvider({ children }) {
     setRecentActivityState((prev) => prev.filter((tx) => tx.clientId !== clientId));
   }, []);
 
+  // ─── ACCIONES OPTIMISTAS – PRODUCTOS ───
+
+  const addProductOptimistic = useCallback(({ productId, name, price, description, stock }) => {
+    const newProduct = {
+      id: productId,
+      name,
+      price: parseFloat(price) || 0,
+      description: description || '',
+      stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
+      createdAt: Date.now(),
+    };
+    setProductsState((prev) => [newProduct, ...prev]);
+  }, []);
+
+  const editProductOptimistic = useCallback(({ productId, name, price, description, stock }) => {
+    setProductsState((prev) =>
+      prev.map((p) =>
+        p.id === productId
+          ? {
+              ...p,
+              name,
+              price: parseFloat(price) || 0,
+              description: description || '',
+              stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
+            }
+          : p
+      )
+    );
+  }, []);
+
+  const deleteProductOptimistic = useCallback((productId) => {
+    setProductsState((prev) => prev.filter((p) => p.id !== productId));
+    setRecentSalesState((prev) => prev.filter((s) => s.productId !== productId));
+  }, []);
+
+  const addSaleOptimistic = useCallback(({ saleId, productId, clientId, clientName, quantity, unitPrice, totalAmount, date, newStock, productName }) => {
+    const now = Date.now();
+    const newSale = {
+      id: saleId,
+      productId,
+      clientId,
+      clientName,
+      quantity,
+      unitPrice,
+      totalAmount,
+      date,
+      createdAt: now,
+    };
+    setRecentSalesState((prev) => [newSale, ...prev].slice(0, 10));
+
+    // Agregar también a actividad reciente (home screen)
+    const activityItem = {
+      id: saleId,
+      type: 'sale',
+      amount: totalAmount,
+      clientName,
+      clientId,
+      description: productName || '',
+      productName: productName || '',
+      createdAt: now,
+      _timestamp: now,
+      _date: new Date(now),
+      _source: 'sale',
+    };
+    setRecentActivityState((prev) => [activityItem, ...prev].slice(0, 8));
+
+    // Actualizar stock en memoria
+    if (newStock >= 0) {
+      setProductsState((prev) =>
+        prev.map((p) => (p.id === productId ? { ...p, stock: newStock } : p))
+      );
+    }
+  }, []);
+
+
+  const deleteSaleOptimistic = useCallback(({ saleId, productId, quantity }) => {
+    setRecentSalesState((prev) => prev.filter((s) => s.id !== saleId));
+    // Revertir stock optimistamente
+    setProductsState((prev) =>
+      prev.map((p) =>
+        p.id === productId && p.stock >= 0
+          ? { ...p, stock: p.stock + (parseFloat(quantity) || 0) }
+          : p
+      )
+    );
+  }, []);
+
+
   const value = {
     clients,
     recentActivity,
     loadingClients,
-    // Acciones optimistas
+    // Productos y Ventas
+    products,
+    recentSales,
+    loadingProducts,
+    // Acciones optimistas – clientes
     addClientOptimistic,
     editClientOptimistic,
     addTransactionOptimistic,
     editTransactionOptimistic,
     deleteTransactionOptimistic,
     deleteClientOptimistic,
+    // Acciones optimistas – productos
+    addProductOptimistic,
+    editProductOptimistic,
+    deleteProductOptimistic,
+    addSaleOptimistic,
+    deleteSaleOptimistic,
     // Helpers
     updateClients: updateClientsState,
     updateRecentActivity,
     pendingOpsRef,
   };
+
 
   return (
     <LocalDataContext.Provider value={value}>

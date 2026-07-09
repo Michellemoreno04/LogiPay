@@ -31,6 +31,14 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="products"
+        options={{
+          headerShown: false,
+          tabBarLabel: 'Productos',
+          tabBarIcon: ({ color, size }) => <Ionicons name="pricetag" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           headerShown: false,
