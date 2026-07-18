@@ -14,12 +14,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAuth } from '../../authContext/authContext';
 import SaleModal from '../../components/modales/SaleModal';
 import { useLocalData } from '../../context/LocalDataContext';
-import { useAuth } from '../../authContext/authContext';
-import { deleteSale, recordSale } from '../../utils/productService';
 import { getSalesByProduct } from '../../utils/database';
+import { deleteSale, recordSale } from '../../utils/productService';
 
 export default function ProductDetailScreen() {
   const { productId } = useLocalSearchParams();
@@ -195,122 +194,121 @@ export default function ProductDetailScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        {/* ─── Header ─── */}
-        <LinearGradient
-          colors={['#1A1F4B', '#2D3A8C', '#4C669F']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerGradient}
-        >
-          <View style={styles.decorCircle1} />
-          <View style={styles.decorCircle2} />
+      {/* ─── Header ─── */}
+      <LinearGradient
+        colors={['#1A1F4B', '#2D3A8C', '#4C669F']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerGradient}
+      >
+        <View style={styles.decorCircle1} />
+        <View style={styles.decorCircle2} />
 
-          {/* Back button */}
-          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={22} color="#fff" />
-          </TouchableOpacity>
-
-          <Animated.View
-            style={[styles.headerContent, { opacity: headerOpacity, transform: [{ translateY: headerSlide }] }]}
-          >
-            <View style={styles.productIconBig}>
-              <Ionicons name="cube" size={32} color="#4C669F" />
-            </View>
-            <Text style={styles.productNameHeader} numberOfLines={2}>{product.name}</Text>
-            {product.description ? (
-              <Text style={styles.productDescHeader}>{product.description}</Text>
-            ) : null}
-
-            {/* Chips */}
-            <View style={styles.chipsRow}>
-              <View style={styles.chip}>
-                <Ionicons name="pricetag" size={13} color="#A8C0FF" />
-                <Text style={styles.chipText}>${parseFloat(product.price || 0).toFixed(2)}</Text>
-              </View>
-              {product.stock >= 0 && (
-                <View style={[styles.chip, product.stock === 0 && styles.chipRed]}>
-                  <Ionicons name="layers" size={13} color={product.stock > 0 ? '#A8C0FF' : '#FF8A80'} />
-                  <Text style={[styles.chipText, product.stock === 0 && styles.chipTextRed]}>
-                    Stock: {product.stock}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </Animated.View>
-        </LinearGradient>
-
-        {/* ─── Stats ─── */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <Ionicons name="cash-outline" size={20} color="#2D8C5A" />
-            <Text style={styles.statAmount}>${totalRevenue.toFixed(2)}</Text>
-            <Text style={styles.statLabel}>Ingreso total</Text>
-          </View>
-          <View style={[styles.statCard, styles.statCardCenter]}>
-            <Ionicons name="cart-outline" size={20} color="#4C669F" />
-            <Text style={styles.statAmount}>{sales.length}</Text>
-            <Text style={styles.statLabel}>Ventas</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Ionicons name="layers-outline" size={20} color="#FF6B35" />
-            <Text style={styles.statAmount}>{totalUnitsSold}</Text>
-            <Text style={styles.statLabel}>Unidades</Text>
-          </View>
-        </View>
-
-        {/* ─── Register Sale Button ─── */}
-        <TouchableOpacity
-          style={styles.registerSaleBtn}
-          onPress={() => setSaleModalVisible(true)}
-          activeOpacity={0.88}
-        >
-          <LinearGradient
-            colors={['#2D8C5A', '#1A4B2F']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.registerSaleBtnGradient}
-          >
-            <Ionicons name="cart" size={20} color="#fff" />
-            <Text style={styles.registerSaleBtnText}>Registrar Venta</Text>
-          </LinearGradient>
+        {/* Back button */}
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
 
-        {/* ─── Sales list ─── */}
-        <FlatList
-          data={sales}
-          keyExtractor={(item) => item.id}
-          renderItem={renderSaleItem}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            sales.length > 0 ? (
-              <Text style={styles.sectionLabel}>
-                Historial de ventas ({sales.length})
-              </Text>
-            ) : null
-          }
-          ListEmptyComponent={
-            !loadingSales ? (
-              <View style={styles.emptyState}>
-                <LinearGradient
-                  colors={['#E8F5EE', '#C8EDD8']}
-                  style={styles.emptyIconBg}
-                >
-                  <Ionicons name="receipt-outline" size={40} color="#2D8C5A" />
-                </LinearGradient>
-                <Text style={styles.emptyTitle}>Sin ventas aún</Text>
-                <Text style={styles.emptySubtitle}>
-                  Registra la primera venta de este producto
+        <Animated.View
+          style={[styles.headerContent, { opacity: headerOpacity, transform: [{ translateY: headerSlide }] }]}
+        >
+          <View style={styles.productIconBig}>
+            <Ionicons name="cube" size={32} color="#4C669F" />
+          </View>
+          <Text style={styles.productNameHeader} numberOfLines={2}>{product.name}</Text>
+          {product.description ? (
+            <Text style={styles.productDescHeader}>{product.description}</Text>
+          ) : null}
+
+          {/* Chips */}
+          <View style={styles.chipsRow}>
+            <View style={styles.chip}>
+              <Ionicons name="pricetag" size={13} color="#A8C0FF" />
+              <Text style={styles.chipText}>${parseFloat(product.price || 0).toFixed(2)}</Text>
+            </View>
+            {product.stock >= 0 && (
+              <View style={[styles.chip, product.stock === 0 && styles.chipRed]}>
+                <Ionicons name="layers" size={13} color={product.stock > 0 ? '#A8C0FF' : '#FF8A80'} />
+                <Text style={[styles.chipText, product.stock === 0 && styles.chipTextRed]}>
+                  Stock: {product.stock}
                 </Text>
               </View>
-            ) : null
-          }
-        />
-      </SafeAreaView>
+            )}
+          </View>
+        </Animated.View>
+      </LinearGradient>
+
+      {/* ─── Stats ─── */}
+      <View style={styles.statsRow}>
+        <View style={styles.statCard}>
+          <Ionicons name="cash-outline" size={20} color="#2D8C5A" />
+          <Text style={styles.statAmount}>${totalRevenue.toFixed(2)}</Text>
+          <Text style={styles.statLabel}>Ingreso total</Text>
+        </View>
+        <View style={[styles.statCard, styles.statCardCenter]}>
+          <Ionicons name="cart-outline" size={20} color="#4C669F" />
+          <Text style={styles.statAmount}>{sales.length}</Text>
+          <Text style={styles.statLabel}>Ventas</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Ionicons name="layers-outline" size={20} color="#FF6B35" />
+          <Text style={styles.statAmount}>{totalUnitsSold}</Text>
+          <Text style={styles.statLabel}>Unidades</Text>
+        </View>
+      </View>
+
+      {/* ─── Register Sale Button ─── */}
+      <TouchableOpacity
+        style={styles.registerSaleBtn}
+        onPress={() => setSaleModalVisible(true)}
+        activeOpacity={0.88}
+      >
+        <LinearGradient
+          colors={['#2D8C5A', '#1A4B2F']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={styles.registerSaleBtnGradient}
+        >
+          <Ionicons name="cart" size={20} color="#fff" />
+          <Text style={styles.registerSaleBtnText}>Registrar Venta</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+
+      {/* ─── Sales list ─── */}
+      <FlatList
+        data={sales}
+        keyExtractor={(item) => item.id}
+        renderItem={renderSaleItem}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          sales.length > 0 ? (
+            <Text style={styles.sectionLabel}>
+              Historial de ventas ({sales.length})
+            </Text>
+          ) : null
+        }
+        ListEmptyComponent={
+          !loadingSales ? (
+            <View style={styles.emptyState}>
+              <LinearGradient
+                colors={['#E8F5EE', '#C8EDD8']}
+                style={styles.emptyIconBg}
+              >
+                <Ionicons name="receipt-outline" size={40} color="#2D8C5A" />
+              </LinearGradient>
+              <Text style={styles.emptyTitle}>Sin ventas aún</Text>
+              <Text style={styles.emptySubtitle}>
+                Registra la primera venta de este producto
+              </Text>
+            </View>
+          ) : null
+        }
+      />
+
 
       {/* ─── Sale Modal ─── */}
-      <SaleModal
+      < SaleModal
         visible={saleModalVisible}
         onClose={() => setSaleModalVisible(false)}
         onSave={handleRecordSale}
@@ -333,25 +331,27 @@ const styles = StyleSheet.create({
 
   // Header
   headerGradient: {
-    paddingTop: Platform.OS === 'android' ? 16 : 0,
-    paddingBottom: 28,
-    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 50 : 60,
+    paddingBottom: 50,
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
     overflow: 'hidden',
   },
   decorCircle1: {
     position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
     backgroundColor: 'rgba(255,255,255,0.05)',
     top: -40,
-    right: -50,
+    right: -60,
   },
   decorCircle2: {
     position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
     backgroundColor: 'rgba(255,255,255,0.04)',
     bottom: -20,
     left: -30,
@@ -408,7 +408,7 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     marginHorizontal: 16,
-    marginTop: -18,
+    marginTop: -30,
     gap: 10,
     zIndex: 10,
     marginBottom: 12,

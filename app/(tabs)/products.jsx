@@ -1,8 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
@@ -15,15 +16,32 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SnappySpringConfig, TourProvider, TourZone, useTour } from 'react-native-lumen';
+import { useAuth } from '../../authContext/authContext';
 import ProductModal from '../../components/modales/ProductModal';
 import { useLocalData } from '../../context/LocalDataContext';
-import { useAuth } from '../../authContext/authContext';
-import { createProduct, deleteProduct, editProduct as editProductService } from '../../utils/productService';
 import { getSalesByProduct } from '../../utils/database';
+import { createProduct, deleteProduct, editProduct as editProductService } from '../../utils/productService';
+
+
+
 
 export default function ProductsScreen() {
+  return (
+    <TourProvider
+      stepsOrder={['step-1']}
+      config={{ springConfig: SnappySpringConfig, enableGlow: true, preventInteraction: true, labels: { finish: 'Entendido' } }}
+
+
+    >
+      <ProductsScreenContent />
+    </TourProvider>
+  );
+}
+
+function ProductsScreenContent() {
   const { user, userData, updateLocalUserData } = useAuth();
+  const { start, currentStep } = useTour();
   const {
     products,
     loadingProducts,
@@ -42,6 +60,30 @@ export default function ProductsScreen() {
   const filteredProducts = products.filter((p) =>
     (p.name || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  useEffect(() => {
+    const checkTour = async () => {
+      if (!user) return;
+      AsyncStorage.removeItem(`hasCreateProductTour_${user.uid}`);
+
+      try {
+        const hasSeenTour = await AsyncStorage.getItem(`hasCreateProductTour_${user.uid}`);
+        if (hasSeenTour !== 'true') {
+
+          setTimeout(() => {
+            start();
+            AsyncStorage.setItem(`hasCreateProductTour_${user.uid}`, 'true');
+          }, 1000);
+
+        }
+      } catch (error) {
+        console.error('Error handling tour status:', error);
+      }
+    };
+
+    checkTour();
+  }, [user, start]);
+
 
   const handleOpenCreate = () => {
     setEditingProduct(null);
@@ -100,7 +142,7 @@ export default function ProductsScreen() {
 
               await deleteProduct({ uid: user.uid, productId: product.id });
               deleteProductOptimistic(product.id);
-              
+
               if (updateLocalUserData && debtToRevert > 0) {
                 updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) - debtToRevert });
               }
@@ -179,75 +221,80 @@ export default function ProductsScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        {/* ─── Header Gradient ─── */}
-        <LinearGradient
-          colors={['#1A1F4B', '#2D3A8C', '#4C669F']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerGradient}
-        >
-          <View style={styles.decorCircle1} />
-          <View style={styles.decorCircle2} />
-          <View style={styles.headerContent}>
-            <View>
-              <Text style={styles.headerLabel}>Gestión de</Text>
-              <Text style={styles.headerTitle}>Mis Productos</Text>
-            </View>
-            <View style={styles.headerBadge}>
-              <Text style={styles.headerBadgeText}>{products.length}</Text>
-            </View>
+      {/* ─── Header Gradient ─── */}
+      <LinearGradient
+        colors={['#1A1F4B', '#2D3A8C', '#4C669F']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.headerGradient}
+      >
+        <View style={styles.decorCircle1} />
+        <View style={styles.decorCircle2} />
+        <View style={styles.headerContent}>
+          <View>
+            <Text style={styles.headerLabel}>Gestión de</Text>
+            <Text style={styles.headerTitle}>Mis Productos</Text>
           </View>
-
-          {/* Search inside header */}
-          <View style={styles.searchContainer}>
-            <Ionicons name="search" size={18} color="rgba(255,255,255,0.6)" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Buscar productos..."
-              placeholderTextColor="rgba(255,255,255,0.45)"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.5)" />
-              </TouchableOpacity>
-            )}
+          <View style={styles.headerBadge}>
+            <Text style={styles.headerBadgeText}>{products.length}</Text>
           </View>
-        </LinearGradient>
+        </View>
 
-        {/* ─── List ─── */}
-        <FlatList
-          data={filteredProducts}
-          keyExtractor={(item) => item.id}
-          renderItem={renderProduct}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            filteredProducts.length > 0 ? (
-              <Text style={styles.sectionLabel}>
-                {filteredProducts.length} producto{filteredProducts.length !== 1 ? 's' : ''}
-              </Text>
-            ) : null
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <LinearGradient
-                colors={['#E8EEFF', '#D0D8FF']}
-                style={styles.emptyIconBg}
-              >
-                <Ionicons name="cube-outline" size={48} color="#4C669F" />
-              </LinearGradient>
-              <Text style={styles.emptyTitle}>
-                {searchQuery ? 'Sin resultados' : 'Aún no tienes productos'}
-              </Text>
-              <Text style={styles.emptySubtitle}>
-                {searchQuery
-                  ? `No encontramos productos con "${searchQuery}"`
-                  : 'Crea tu primer producto y empieza a registrar ventas'}
-              </Text>
-              {!searchQuery && (
+        {/* Search inside header */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={18} color="rgba(255,255,255,0.6)" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar productos..."
+            placeholderTextColor="rgba(255,255,255,0.45)"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.5)" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </LinearGradient>
+
+      {/* ─── List ─── */}
+      <FlatList
+        data={filteredProducts}
+        keyExtractor={(item) => item.id}
+        renderItem={renderProduct}
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          filteredProducts.length > 0 ? (
+            <Text style={styles.sectionLabel}>
+              {filteredProducts.length} producto{filteredProducts.length !== 1 ? 's' : ''}
+            </Text>
+          ) : null
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <LinearGradient
+              colors={['#E8EEFF', '#D0D8FF']}
+              style={styles.emptyIconBg}
+            >
+              <Ionicons name="cube-outline" size={48} color="#4C669F" />
+            </LinearGradient>
+            <Text style={styles.emptyTitle}>
+              {searchQuery ? 'Sin resultados' : 'Aún no tienes productos'}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {searchQuery
+                ? `No encontramos productos con "${searchQuery}"`
+                : 'Crea tu primer producto y empieza a registrar ventas'}
+            </Text>
+            {!searchQuery && (
+              <TourZone stepKey='step-1'
+
+                name='Crear Producto'
+                description='Aqui puedes crear productos que estaras vendiendo.'
+                order={1}
+                borderRadius={20} >
                 <TouchableOpacity style={styles.emptyBtn} onPress={handleOpenCreate}>
                   <LinearGradient
                     colors={['#4C669F', '#2D3A8C']}
@@ -257,11 +304,11 @@ export default function ProductsScreen() {
                     <Text style={styles.emptyBtnText}>Crear producto</Text>
                   </LinearGradient>
                 </TouchableOpacity>
-              )}
-            </View>
-          }
-        />
-      </SafeAreaView>
+              </TourZone>
+            )}
+          </View>
+        }
+      />
 
       {/* ─── FAB ─── */}
       <Animated.View style={[styles.fabContainer, { transform: [{ scale: fabScale }] }]}>
@@ -292,25 +339,27 @@ const styles = StyleSheet.create({
 
   // Header
   headerGradient: {
-    paddingTop: Platform.OS === 'android' ? 16 : 0,
+    paddingTop: Platform.OS === 'android' ? 50 : 60,
     paddingBottom: 24,
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
     overflow: 'hidden',
   },
   decorCircle1: {
     position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
     backgroundColor: 'rgba(255,255,255,0.05)',
     top: -40,
-    right: -50,
+    right: -60,
   },
   decorCircle2: {
     position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
     backgroundColor: 'rgba(255,255,255,0.04)',
     bottom: -20,
     left: -30,

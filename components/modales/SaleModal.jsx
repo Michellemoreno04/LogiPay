@@ -5,6 +5,7 @@ import {
   Animated,
   FlatList,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   StyleSheet,
@@ -188,58 +189,7 @@ export default function SaleModal({ visible, onClose, onSave, product, clients =
               />
             </TouchableOpacity>
 
-            {showClientPicker && (
-              <View style={styles.clientDropdown}>
-                <View style={styles.searchWrapper}>
-                  <Ionicons name="search" size={16} color="#8E8E93" />
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Buscar cliente..."
-                    placeholderTextColor="#C0C0C8"
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    autoFocus
-                  />
-                </View>
-                <FlatList
-                  data={filteredClients}
-                  keyExtractor={(item) => item.id}
-                  style={{ maxHeight: 180 }}
-                  keyboardShouldPersistTaps="handled"
-                  ListEmptyComponent={
-                    <Text style={styles.emptyClients}>No se encontraron clientes</Text>
-                  }
-                  renderItem={({ item }) => (
-                    <TouchableOpacity
-                      style={[
-                        styles.clientOption,
-                        selectedClient?.id === item.id && styles.clientOptionSelected,
-                      ]}
-                      onPress={() => {
-                        setSelectedClient(item);
-                        setShowClientPicker(false);
-                        setSearchQuery('');
-                      }}
-                    >
-                      <View style={styles.clientOptionAvatar}>
-                        <Text style={styles.clientOptionAvatarText}>
-                          {(item.name || '?')[0].toUpperCase()}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.clientOptionName}>{item.name}</Text>
-                        {item.phone ? (
-                          <Text style={styles.clientOptionPhone}>{item.phone}</Text>
-                        ) : null}
-                      </View>
-                      {selectedClient?.id === item.id && (
-                        <Ionicons name="checkmark-circle" size={20} color="#2D8C5A" />
-                      )}
-                    </TouchableOpacity>
-                  )}
-                />
-              </View>
-            )}
+
           </View>
 
           {/* Cantidad */}
@@ -305,6 +255,71 @@ export default function SaleModal({ visible, onClose, onSave, product, clients =
           </View>
         </View>
       </Animated.View>
+
+      {/* Overlay para la búsqueda de cliente */}
+      {showClientPicker && (
+        <KeyboardAvoidingView
+          style={styles.clientPickerOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.clientPickerModal}>
+            <View style={styles.clientPickerHeader}>
+              <Text style={styles.clientPickerTitle}>Seleccionar Cliente</Text>
+              <TouchableOpacity onPress={() => setShowClientPicker(false)} style={styles.clientPickerClose}>
+                <Ionicons name="close" size={24} color="#1A1F4B" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.searchWrapper}>
+              <Ionicons name="search" size={18} color="#8E8E93" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Buscar cliente..."
+                placeholderTextColor="#C0C0C8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+              />
+            </View>
+            <FlatList
+              data={filteredClients}
+              keyExtractor={(item) => item.id}
+              style={styles.clientList}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <Text style={styles.emptyClients}>No se encontraron clientes</Text>
+              }
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.clientOption,
+                    selectedClient?.id === item.id && styles.clientOptionSelected,
+                  ]}
+                  onPress={() => {
+                    setSelectedClient(item);
+                    setShowClientPicker(false);
+                    setSearchQuery('');
+                  }}
+                >
+                  <View style={styles.clientOptionAvatar}>
+                    <Text style={styles.clientOptionAvatarText}>
+                      {(item.name || '?')[0].toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.clientOptionName}>{item.name}</Text>
+                    {item.phone ? (
+                      <Text style={styles.clientOptionPhone}>{item.phone}</Text>
+                    ) : null}
+                  </View>
+                  {selectedClient?.id === item.id && (
+                    <Ionicons name="checkmark-circle" size={24} color="#2D8C5A" />
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      )}
     </Modal>
   );
 }
@@ -385,29 +400,60 @@ const styles = StyleSheet.create({
   },
   clientPickerText: { flex: 1, fontSize: 16, color: '#1A1F4B', fontWeight: '500' },
   placeholderText: { color: '#C0C0C8', fontWeight: '400' },
-  clientDropdown: {
-    marginTop: 6,
+  clientPickerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10,12,30,0.6)',
+    justifyContent: 'center',
+    padding: 20,
+    zIndex: 100,
+    elevation: 10,
+  },
+  clientPickerModal: {
     backgroundColor: '#fff',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#E0E4F5',
+    borderRadius: 20,
     overflow: 'hidden',
-    shadowColor: '#4C669F',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 5,
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  clientPickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 10,
+  },
+  clientPickerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A1F4B',
+  },
+  clientPickerClose: {
+    padding: 4,
   },
   searchWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F2F8',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginHorizontal: 16,
+    marginBottom: 10,
+    backgroundColor: '#F5F7FF',
+    borderRadius: 12,
     gap: 8,
   },
-  searchInput: { flex: 1, fontSize: 15, color: '#1A1F4B' },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#1A1F4B',
+  },
+  clientList: {
+    maxHeight: 300,
+  },
   emptyClients: { textAlign: 'center', color: '#8E8E93', padding: 16, fontSize: 14 },
   clientOption: {
     flexDirection: 'row',

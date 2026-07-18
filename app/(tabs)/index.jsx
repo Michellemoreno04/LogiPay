@@ -15,7 +15,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { TourZone, useTour } from 'react-native-lumen';
+import { TourProvider, SnappySpringConfig, TourZone, useTour } from 'react-native-lumen';
 import { useAuth } from '../../authContext/authContext';
 import ActivityItem from '../../components/ActivityItem';
 import AdjustModal from '../../components/AdjustModal';
@@ -26,8 +26,19 @@ import OrganisazionScreen from '../organisazionScreen';
 const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
+  return (
+    <TourProvider
+      stepsOrder={['step-1', 'step-2']}
+      config={{ springConfig: SnappySpringConfig, enableGlow: true, preventInteraction: true }}
+    >
+      <HomeScreenContent />
+    </TourProvider>
+  );
+}
+
+function HomeScreenContent() {
   const { user, userData } = useAuth();
-  const { start } = useTour();
+  const { start, currentStep } = useTour();
   const { recentActivity } = useLocalData();
 
   const [loadingActivity, setLoadingActivity] = useState(false);
@@ -60,6 +71,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const checkTour = async () => {
       if (!user) return;
+      //AsyncStorage.removeItem(`hasSeenTour_${user.uid}`);
 
       try {
         const hasSeenTour = await AsyncStorage.getItem(`hasSeenTour_${user.uid}`);
@@ -225,6 +237,7 @@ export default function HomeScreen() {
             style={styles.fabButton}
             onPress={() => router.push('/add-user')}
             activeOpacity={0.85}
+            disabled={currentStep !== null}
           >
             <LinearGradient
               colors={['#4C669F', '#3B5998', '#192f6a']}

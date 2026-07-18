@@ -1,9 +1,9 @@
+import { getAuth, GoogleAuthProvider, signInWithCredential } from '@react-native-firebase/auth';
 import {
   GoogleSignin,
   isErrorWithCode,
   statusCodes,
 } from '@react-native-google-signin/google-signin';
-import { getAuth, signInWithCredential, GoogleAuthProvider } from '@react-native-firebase/auth';
 import { useRouter } from 'expo-router';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useState } from 'react';
@@ -44,8 +44,11 @@ export const useGoogleAuth = () => {
         throw new Error('No se recibió el token de Google.');
       }
 
+      // Obtener el accessToken (requerido por el SDK de Firebase más reciente en iOS)
+      const { accessToken } = await GoogleSignin.getTokens();
+
       // Usar @react-native-firebase/auth (SDK nativo) en vez del JS SDK
-      const googleCredential = GoogleAuthProvider.credential(idToken);
+      const googleCredential = GoogleAuthProvider.credential(idToken, accessToken);
       const userCredential = await signInWithCredential(getAuth(), googleCredential);
       const user = userCredential.user;
 

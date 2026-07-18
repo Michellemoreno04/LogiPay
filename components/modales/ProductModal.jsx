@@ -111,116 +111,116 @@ export default function ProductModal({ visible, onClose, onSave, editProduct = n
           { transform: [{ translateY: slideAnim }, { translateY: keyboardOffset }] },
         ]}
       >
-          {/* Header */}
-          <LinearGradient
-            colors={['#1A1F4B', '#2D3A8C']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.header}
-          >
-            <View style={styles.headerContent}>
-              <View style={styles.headerIcon}>
-                <Ionicons name={editProduct ? 'create' : 'cube'} size={22} color="#fff" />
-              </View>
-              <Text style={styles.headerTitle}>
-                {editProduct ? 'Editar Producto' : 'Nuevo Producto'}
-              </Text>
+        {/* Header */}
+        <LinearGradient
+          colors={['#1A1F4B', '#2D3A8C']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.header}
+        >
+          <View style={styles.headerContent}>
+            <View style={styles.headerIcon}>
+              <Ionicons name={editProduct ? 'create' : 'cube'} size={22} color="#fff" />
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={22} color="rgba(255,255,255,0.7)" />
+            <Text style={styles.headerTitle}>
+              {editProduct ? 'Editar Producto' : 'Nuevo Producto'}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <Ionicons name="close" size={22} color="rgba(255,255,255,0.7)" />
+          </TouchableOpacity>
+        </LinearGradient>
+
+        <ScrollView style={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          {/* Nombre */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Nombre del producto *</Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="cube-outline" size={18} color="#4C669F" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Ej. cerveza, leche ect..."
+                placeholderTextColor="#C0C0C8"
+                value={name}
+                onChangeText={setName}
+                maxLength={80}
+              />
+            </View>
+          </View>
+
+          {/* Precio */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Precio unitario *</Text>
+            <View style={styles.inputWrapper}>
+              <Text style={styles.currencySymbol}>$</Text>
+              <TextInput
+                style={[styles.input, styles.inputWithSymbol]}
+                placeholder="0.00"
+                placeholderTextColor="#C0C0C8"
+                value={price}
+                onChangeText={setPrice}
+                keyboardType="decimal-pad"
+              />
+            </View>
+          </View>
+
+          {/* Descripción */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Descripción <Text style={styles.optional}>(opcional)</Text></Text>
+            <View style={[styles.inputWrapper, styles.textAreaWrapper]}>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                placeholder="Ej. este producto es frio, ect..."
+                placeholderTextColor="#C0C0C8"
+                value={description}
+                onChangeText={setDescription}
+                multiline
+                numberOfLines={3}
+                maxLength={200}
+              />
+            </View>
+          </View>
+
+          {/* Stock */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.label}>
+              Stock disponible <Text style={styles.optional}>(opcional, déjalo vacío si no manejas inventario)</Text>
+            </Text>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="layers-outline" size={18} color="#4C669F" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Ej. 50"
+                placeholderTextColor="#C0C0C8"
+                value={stock}
+                onChangeText={setStock}
+                keyboardType="decimal-pad"
+              />
+            </View>
+          </View>
+
+          {/* Botones */}
+          <View style={styles.actions}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={loading}>
+              <Text style={styles.cancelText}>Cancelar</Text>
             </TouchableOpacity>
-          </LinearGradient>
-
-          <ScrollView style={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            {/* Nombre */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Nombre del producto *</Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="cube-outline" size={18} color="#4C669F" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ej. Camiseta talla M"
-                  placeholderTextColor="#C0C0C8"
-                  value={name}
-                  onChangeText={setName}
-                  maxLength={80}
-                />
-              </View>
-            </View>
-
-            {/* Precio */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Precio unitario *</Text>
-              <View style={styles.inputWrapper}>
-                <Text style={styles.currencySymbol}>$</Text>
-                <TextInput
-                  style={[styles.input, styles.inputWithSymbol]}
-                  placeholder="0.00"
-                  placeholderTextColor="#C0C0C8"
-                  value={price}
-                  onChangeText={setPrice}
-                  keyboardType="decimal-pad"
-                />
-              </View>
-            </View>
-
-            {/* Descripción */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Descripción <Text style={styles.optional}>(opcional)</Text></Text>
-              <View style={[styles.inputWrapper, styles.textAreaWrapper]}>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  placeholder="Ej. Color azul, algodón 100%..."
-                  placeholderTextColor="#C0C0C8"
-                  value={description}
-                  onChangeText={setDescription}
-                  multiline
-                  numberOfLines={3}
-                  maxLength={200}
-                />
-              </View>
-            </View>
-
-            {/* Stock */}
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>
-                Stock disponible <Text style={styles.optional}>(opcional, déjalo vacío si no manejas inventario)</Text>
-              </Text>
-              <View style={styles.inputWrapper}>
-                <Ionicons name="layers-outline" size={18} color="#4C669F" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ej. 50"
-                  placeholderTextColor="#C0C0C8"
-                  value={stock}
-                  onChangeText={setStock}
-                  keyboardType="decimal-pad"
-                />
-              </View>
-            </View>
-
-            {/* Botones */}
-            <View style={styles.actions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={loading}>
-                <Text style={styles.cancelText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveBtn, !isValid && styles.saveBtnDisabled]}
-                onPress={handleSave}
-                disabled={!isValid || loading}
+            <TouchableOpacity
+              style={[styles.saveBtn, !isValid && styles.saveBtnDisabled]}
+              onPress={handleSave}
+              disabled={!isValid || loading}
+            >
+              <LinearGradient
+                colors={isValid ? ['#4C669F', '#2D3A8C'] : ['#C0C0C8', '#A0A0A8']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.saveBtnGradient}
               >
-                <LinearGradient
-                  colors={isValid ? ['#4C669F', '#2D3A8C'] : ['#C0C0C8', '#A0A0A8']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.saveBtnGradient}
-                >
-                  <Ionicons name={editProduct ? 'checkmark' : 'add'} size={20} color="#fff" />
-                  <Text style={styles.saveText}>{editProduct ? 'Guardar' : 'Crear Producto'}</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
+                <Ionicons name={editProduct ? 'checkmark' : 'add'} size={20} color="#fff" />
+                <Text style={styles.saveText}>{editProduct ? 'Guardar' : 'Crear Producto'}</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </Animated.View>
     </Modal>
   );

@@ -3,10 +3,6 @@ import { Stack, useRouter } from "expo-router";
 import * as Updates from 'expo-updates';
 import { useEffect } from "react";
 import { Alert, Platform, StatusBar } from 'react-native';
-import {
-  SnappySpringConfig,
-  TourProvider,
-} from 'react-native-lumen';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import AuthProvider, { useAuth } from "../authContext/authContext";
 import { LocalDataProvider } from "../context/LocalDataContext";
@@ -60,9 +56,7 @@ function RootLayoutNav() {
   // Esconder la barra de navegación nativa de Android
   useEffect(() => {
     if (Platform.OS === 'android') {
-      NavigationBar.setPositionAsync('absolute');
       NavigationBar.setVisibilityAsync('hidden');
-      NavigationBar.setBehaviorAsync('overlay-swipe');
     }
   }, []);
 
@@ -116,12 +110,7 @@ export default function RootLayout() {
     <AuthProvider>
       <LocalDataProvider>
         <AlertProvider>
-          <TourProvider
-            stepsOrder={['step-1', 'step-2']}
-            config={{ springConfig: SnappySpringConfig, enableGlow: true }}
-          >
-            <RootLayoutNav />
-          </TourProvider>
+          <RootLayoutNav />
         </AlertProvider>
       </LocalDataProvider>
     </AuthProvider>

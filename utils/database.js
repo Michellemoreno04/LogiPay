@@ -98,6 +98,33 @@ export const initDB = async () => {
     );
   `);
 
+  // ── Migraciones de esquema ──
+  try {
+    // Migración para 'products'
+    const productsInfo = await db.getAllAsync("PRAGMA table_info(products)");
+    const hasProductDesc = productsInfo.some(col => col.name === 'description');
+    const hasProductStock = productsInfo.some(col => col.name === 'stock');
+
+    if (!hasProductDesc) {
+      await db.execAsync("ALTER TABLE products ADD COLUMN description TEXT DEFAULT ''");
+      console.log("[Migration] Added 'description' column to products table.");
+    }
+    if (!hasProductStock) {
+      await db.execAsync("ALTER TABLE products ADD COLUMN stock REAL DEFAULT -1");
+      console.log("[Migration] Added 'stock' column to products table.");
+    }
+
+    // Migración para 'transactions'
+    const txInfo = await db.getAllAsync("PRAGMA table_info(transactions)");
+    const hasTxDesc = txInfo.some(col => col.name === 'description');
+    if (!hasTxDesc) {
+      await db.execAsync("ALTER TABLE transactions ADD COLUMN description TEXT DEFAULT ''");
+      console.log("[Migration] Added 'description' column to transactions table.");
+    }
+  } catch (error) {
+    console.error("[Migration] Error checking or adding columns:", error);
+  }
+
   return db;
 };
 
