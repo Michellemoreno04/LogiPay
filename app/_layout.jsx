@@ -65,7 +65,7 @@ function RootLayoutNav() {
 
     //console.log("user", user?.uid);
     if (!user) {
-      router.replace('/welcome');
+      router.replace('/onboarding');
     }
   }, [loading, user]);
 
@@ -84,7 +84,6 @@ function RootLayoutNav() {
           },
         }}
       >
-        <Stack.Screen name="welcome" options={{ headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen name="business-type" options={{ headerShown: false }} />
         <Stack.Screen name="login" options={{ headerShown: false }} />

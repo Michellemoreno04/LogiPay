@@ -1,131 +1,145 @@
 import * as SQLite from 'expo-sqlite';
 
 let db = null;
+let initPromise = null;
 
 export const initDB = async () => {
   if (db) return db;
+  if (initPromise) return initPromise;
 
-  db = await SQLite.openDatabaseAsync('logipay.db');
+  initPromise = (async () => {
+    try {
+      const database = await SQLite.openDatabaseAsync('logipay.db');
 
-  // ── Tabla de clientes (fuente de verdad principal) ──
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS clients (
-      id TEXT PRIMARY KEY,
-      uid TEXT NOT NULL,
-      name TEXT NOT NULL,
-      phone TEXT DEFAULT '',
-      email TEXT DEFAULT '',
-      balance REAL DEFAULT 0,
-      createdAt INTEGER NOT NULL
-    );
-  `);
+      // ── Tabla de clientes (fuente de verdad principal) ──
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS clients (
+          id TEXT PRIMARY KEY,
+          uid TEXT NOT NULL,
+          name TEXT NOT NULL,
+          phone TEXT DEFAULT '',
+          email TEXT DEFAULT '',
+          balance REAL DEFAULT 0,
+          createdAt INTEGER NOT NULL
+        );
+      `);
 
-  // ── Tabla de transacciones (fuente de verdad principal) ──
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS transactions (
-      id TEXT PRIMARY KEY,
-      uid TEXT NOT NULL,
-      clientId TEXT NOT NULL,
-      type TEXT NOT NULL,
-      amount REAL NOT NULL,
-      title TEXT DEFAULT '',
-      description TEXT DEFAULT '',
-      date TEXT DEFAULT '',
-      createdAt INTEGER NOT NULL
-    );
-  `);
+      // ── Tabla de transacciones (fuente de verdad principal) ──
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS transactions (
+          id TEXT PRIMARY KEY,
+          uid TEXT NOT NULL,
+          clientId TEXT NOT NULL,
+          type TEXT NOT NULL,
+          amount REAL NOT NULL,
+          title TEXT DEFAULT '',
+          description TEXT DEFAULT '',
+          date TEXT DEFAULT '',
+          createdAt INTEGER NOT NULL
+        );
+      `);
 
-  // ── Tabla de datos del usuario / negocio ──
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS user_data (
-      uid TEXT PRIMARY KEY,
-      businessName TEXT DEFAULT '',
-      businessType TEXT DEFAULT 'commercial',
-      totalPayment REAL DEFAULT 0,
-      totalDebt REAL DEFAULT 0,
-      updatedAt INTEGER NOT NULL
-    );
-  `);
+      // ── Tabla de datos del usuario / negocio ──
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS user_data (
+          uid TEXT PRIMARY KEY,
+          businessName TEXT DEFAULT '',
+          businessType TEXT DEFAULT 'commercial',
+          totalPayment REAL DEFAULT 0,
+          totalDebt REAL DEFAULT 0,
+          updatedAt INTEGER NOT NULL
+        );
+      `);
 
-  // ── Caché genérica (legacy, se mantiene para compatibilidad) ──
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS cache (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updatedAt INTEGER NOT NULL
-    );
-  `);
+      // ── Caché genérica (legacy, se mantiene para compatibilidad) ──
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS cache (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updatedAt INTEGER NOT NULL
+        );
+      `);
 
-  // ── Outbox para sincronización con Firebase ──
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS outbox (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      collection TEXT NOT NULL,
-      docId TEXT,
-      data TEXT,
-      operation TEXT NOT NULL,
-      status TEXT DEFAULT 'pending',
-      createdAt INTEGER NOT NULL
-    );
-  `);
+      // ── Outbox para sincronización con Firebase ──
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS outbox (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          collection TEXT NOT NULL,
+          docId TEXT,
+          data TEXT,
+          operation TEXT NOT NULL,
+          status TEXT DEFAULT 'pending',
+          createdAt INTEGER NOT NULL
+        );
+      `);
 
-  // ── Tabla de productos ──
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS products (
-      id TEXT PRIMARY KEY,
-      uid TEXT NOT NULL,
-      name TEXT NOT NULL,
-      price REAL NOT NULL DEFAULT 0,
-      description TEXT DEFAULT '',
-      stock REAL DEFAULT -1,
-      createdAt INTEGER NOT NULL
-    );
-  `);
+      // ── Tabla de productos ──
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS products (
+          id TEXT PRIMARY KEY,
+          uid TEXT NOT NULL,
+          name TEXT NOT NULL,
+          price REAL NOT NULL DEFAULT 0,
+          description TEXT DEFAULT '',
+          stock REAL DEFAULT -1,
+          createdAt INTEGER NOT NULL
+        );
+      `);
 
-  // ── Tabla de ventas ──
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS sales (
-      id TEXT PRIMARY KEY,
-      uid TEXT NOT NULL,
-      productId TEXT NOT NULL,
-      clientId TEXT NOT NULL,
-      clientName TEXT DEFAULT '',
-      quantity REAL NOT NULL,
-      unitPrice REAL NOT NULL,
-      totalAmount REAL NOT NULL,
-      date TEXT DEFAULT '',
-      createdAt INTEGER NOT NULL
-    );
-  `);
+      // ── Tabla de ventas ──
+      await database.execAsync(`
+        CREATE TABLE IF NOT EXISTS sales (
+          id TEXT PRIMARY KEY,
+          uid TEXT NOT NULL,
+          productId TEXT NOT NULL,
+          clientId TEXT NOT NULL,
+          clientName TEXT DEFAULT '',
+          quantity REAL NOT NULL,
+          unitPrice REAL NOT NULL,
+          totalAmount REAL NOT NULL,
+          date TEXT DEFAULT '',
+          createdAt INTEGER NOT NULL
+        );
+      `);
 
-  // ── Migraciones de esquema ──
-  try {
-    // Migración para 'products'
-    const productsInfo = await db.getAllAsync("PRAGMA table_info(products)");
-    const hasProductDesc = productsInfo.some(col => col.name === 'description');
-    const hasProductStock = productsInfo.some(col => col.name === 'stock');
+      // ── Migraciones de esquema ──
+      try {
+        // Migración para 'products'
+        const productsInfo = await database.getAllAsync("PRAGMA table_info(products)");
+        const hasProductDesc = productsInfo.some(col => col.name === 'description');
+        const hasProductStock = productsInfo.some(col => col.name === 'stock');
 
-    if (!hasProductDesc) {
-      await db.execAsync("ALTER TABLE products ADD COLUMN description TEXT DEFAULT ''");
-      console.log("[Migration] Added 'description' column to products table.");
+        if (!hasProductDesc) {
+          await database.execAsync("ALTER TABLE products ADD COLUMN description TEXT DEFAULT ''");
+          console.log("[Migration] Added 'description' column to products table.");
+        }
+        if (!hasProductStock) {
+          await database.execAsync("ALTER TABLE products ADD COLUMN stock REAL DEFAULT -1");
+          console.log("[Migration] Added 'stock' column to products table.");
+        }
+
+        // Migración para 'transactions'
+        const txInfo = await database.getAllAsync("PRAGMA table_info(transactions)");
+        const hasTxDesc = txInfo.some(col => col.name === 'description');
+        if (!hasTxDesc) {
+          await database.execAsync("ALTER TABLE transactions ADD COLUMN description TEXT DEFAULT ''");
+          console.log("[Migration] Added 'description' column to transactions table.");
+        }
+      } catch (error) {
+        console.error("[Migration] Error checking or adding columns:", error);
+      }
+
+      db = database;
+      return database;
+    } catch (error) {
+      console.error("[Database] Error initializing database:", error);
+      throw error;
+    } finally {
+      initPromise = null;
     }
-    if (!hasProductStock) {
-      await db.execAsync("ALTER TABLE products ADD COLUMN stock REAL DEFAULT -1");
-      console.log("[Migration] Added 'stock' column to products table.");
-    }
+  })();
 
-    // Migración para 'transactions'
-    const txInfo = await db.getAllAsync("PRAGMA table_info(transactions)");
-    const hasTxDesc = txInfo.some(col => col.name === 'description');
-    if (!hasTxDesc) {
-      await db.execAsync("ALTER TABLE transactions ADD COLUMN description TEXT DEFAULT ''");
-      console.log("[Migration] Added 'description' column to transactions table.");
-    }
-  } catch (error) {
-    console.error("[Migration] Error checking or adding columns:", error);
-  }
-
-  return db;
+  return initPromise;
 };
 
 // ─── Helpers de caché genérica (legacy) ───────────────────────────────────────

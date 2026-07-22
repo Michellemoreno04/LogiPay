@@ -20,14 +20,14 @@ export default function AdjustModal({ visible, onClose, userData, user }) {
   useEffect(() => {
     if (visible) {
       const currentTotal = (userData?.totalDebt || 0) - (userData?.totalPayment || 0);
-      setAdjustAmount(formatNumber(Math.max(0, currentTotal).toFixed(2)));
+      setAdjustAmount(formatNumber(Math.abs(currentTotal).toFixed(2)));
       setAdjustNote('');
     }
   }, [visible, userData]);
 
   const handleSaveAdjustment = async () => {
-    const newTotal = parseFloat(adjustAmount.replace(/,/g, ''));
-    if (isNaN(newTotal) || newTotal < 0) {
+    const newTotalAbs = parseFloat(adjustAmount.replace(/,/g, ''));
+    if (isNaN(newTotalAbs) || newTotalAbs < 0) {
       Alert.alert('Error', 'Ingresa un monto válido.');
       return;
     }
@@ -39,6 +39,8 @@ export default function AdjustModal({ visible, onClose, userData, user }) {
     setSavingAdjust(true);
     try {
       const currentTotal = (userData?.totalDebt || 0) - (userData?.totalPayment || 0);
+      const sign = currentTotal < 0 ? -1 : 1;
+      const newTotal = newTotalAbs * sign;
       const difference = newTotal - currentTotal;
 
       if (Math.abs(difference) < 0.01) {
@@ -47,7 +49,7 @@ export default function AdjustModal({ visible, onClose, userData, user }) {
         return;
       }
 
-      const { addToOutbox } = require('../utils/database');
+      const { addToOutbox, insertTransaction } = require('../utils/database');
       const { syncOutbox } = require('../utils/syncEngine');
 
       const adjustType = difference > 0 ? 'debt' : 'payment';
@@ -55,11 +57,24 @@ export default function AdjustModal({ visible, onClose, userData, user }) {
 
       const txRef = collection(db, 'users', user.uid, 'transactions');
       const newTxRef = doc(txRef);
+      
+      const isIncrease = newTotalAbs > Math.abs(currentTotal);
+      const txData = {
+        clientId: 'global',
+        type: isIncrease ? 'increase' : 'decrease',
+        amount: absDiff,
+        title: `Ajuste: ${adjustNote.trim()} (Total anterior: $${Math.abs(currentTotal).toFixed(2)})`,
+        description: `Ajuste: ${adjustNote.trim()} (Total anterior: $${Math.abs(currentTotal).toFixed(2)})`,
+      };
+
+      await insertTransaction(user.uid, {
+        id: newTxRef.id,
+        ...txData,
+        createdAt: Date.now(),
+      });
 
       await addToOutbox(`users/${user.uid}/transactions`, newTxRef.id, {
-        type: adjustType,
-        amount: absDiff,
-        description: `Ajuste: ${adjustNote.trim()} (Total anterior: $${currentTotal.toFixed(2)})`,
+        ...txData,
         createdAt: "SERVER_TIMESTAMP",
       }, 'set');
 
@@ -99,7 +114,7 @@ export default function AdjustModal({ visible, onClose, userData, user }) {
       >
         <KeyboardAvoidingView
           style={{ flex: 1, justifyContent: 'flex-end' }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior="padding"
         >
           <Pressable onPress={(e) => e.stopPropagation()}>
             <View style={styles.modalContainer}>

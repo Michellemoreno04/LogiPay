@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import {
   ActivityIndicator,
   Dimensions,
+  Image,
   Linking,
   Platform,
   StatusBar,
@@ -11,17 +13,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Animated, {
-  FadeInDown,
-  FadeInUp,
-} from 'react-native-reanimated';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 import { useAppleAuth } from '../authContext/appleAuth';
 import { useGoogleAuth } from '../authContext/googleAuth';
 
-
-
-const { width } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function LoginSelectionScreen() {
   const router = useRouter();
@@ -29,7 +25,6 @@ export default function LoginSelectionScreen() {
   const { handleAppleLogin, isAuthenticating: isAppleAuthenticating } = useAppleAuth();
 
   const handleGmailLogin = () => {
-    // Navigate to the existing email login screen
     router.push('/login');
   };
 
@@ -44,33 +39,36 @@ export default function LoginSelectionScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" />
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
 
-      <View style={styles.content}>
-        {/* Back Button */}
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#1C1C1E" />
-        </TouchableOpacity>
+      {/* Hero Image Background */}
+      <View style={styles.heroContainer}>
+        <Image
+          source={require('../assets/images/mujer-en-colmado.png')}
+          style={styles.heroImage}
+        />
+        <LinearGradient
+          colors={['rgba(0,0,0,0.5)', 'rgba(0,0,0,0.1)', '#F8F9FA']}
+          style={StyleSheet.absoluteFill}
+        />
 
-        {/* Header Illustration / Icon */}
-        <Animated.View
-          entering={FadeInDown.delay(200).duration(800)}
-          style={styles.illustrationContainer}
-        >
-          <View style={styles.logoCircle}>
-            <Ionicons name="person-add-outline" size={60} color="#4C669F" />
-          </View>
-        </Animated.View>
+        {/* Top Bar inside hero */}
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+        </View>
 
-        {/* Text Content */}
-        <Animated.View
-          entering={FadeInDown.delay(400).duration(800)}
-          style={styles.textContainer}
-        >
+        <View style={styles.welcomeContainer}>
+          <Text style={styles.welcomeText}>Únete a</Text>
+          <Text style={styles.brandText}>LogiPay</Text>
+        </View>
+      </View>
+
+      {/* Bottom Sheet Card */}
+      <View style={styles.bottomSheet}>
+        <Animated.View entering={FadeInUp.delay(200).duration(600)} style={styles.textContainer}>
           <Text style={styles.title}>Crea tu cuenta</Text>
           <Text style={styles.subtitle}>
             Elige tu método preferido para comenzar a gestionar tus finanzas con LogiPay.
@@ -79,28 +77,27 @@ export default function LoginSelectionScreen() {
 
         {/* Buttons Container */}
         <View style={styles.buttonContainer}>
-          <Animated.View entering={FadeInUp.delay(800).duration(800)}>
+          <Animated.View entering={FadeInUp.delay(400).duration(600)}>
             <TouchableOpacity
-              style={[styles.googleButton, (loading) && { opacity: 0.5 }]}
+              style={[styles.googleButton, loading && { opacity: 0.5 }]}
               onPress={handleGoogleLogin}
               activeOpacity={0.8}
               disabled={loading}
             >
-              {
-                loading ? (
-                  <ActivityIndicator color="#4C669F" />
-                ) : (
-                  <>
-                    <View style={styles.googleIconWrapper}>
-                      <Ionicons name="logo-google" size={22} color="#3742dbff" />
-                    </View>
-                    <Text style={styles.googleButtonText}>Iniciar Sesión con Google</Text>
-                  </>
-                )
-              }
+              {loading ? (
+                <ActivityIndicator color="#4C669F" />
+              ) : (
+                <>
+                  <View style={styles.googleIconWrapper}>
+                    <Ionicons name="logo-google" size={22} color="#3742dbff" />
+                  </View>
+                  <Text style={styles.googleButtonText}>Iniciar Sesión con Google</Text>
+                </>
+              )}
             </TouchableOpacity>
           </Animated.View>
-          <Animated.View entering={FadeInUp.delay(600).duration(800)}>
+
+          <Animated.View entering={FadeInUp.delay(500).duration(600)}>
             <TouchableOpacity
               style={styles.gmailButton}
               onPress={handleGmailLogin}
@@ -113,9 +110,8 @@ export default function LoginSelectionScreen() {
             </TouchableOpacity>
           </Animated.View>
 
-
           {Platform.OS === 'ios' && (
-            <Animated.View entering={FadeInUp.delay(1000).duration(800)}>
+            <Animated.View entering={FadeInUp.delay(600).duration(600)}>
               <TouchableOpacity
                 style={[styles.appleButton, isAppleAuthenticating && { opacity: 0.5 }]}
                 onPress={handleAppleLogin}
@@ -139,7 +135,7 @@ export default function LoginSelectionScreen() {
 
         {/* Footer */}
         <Animated.View
-          entering={FadeInUp.delay(1200).duration(800)}
+          entering={FadeInUp.delay(800).duration(600)}
           style={styles.footer}
         >
           <Text style={styles.footerText}>
@@ -149,7 +145,7 @@ export default function LoginSelectionScreen() {
           </Text>
         </Animated.View>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -158,59 +154,86 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8F9FA',
   },
-  content: {
-    flex: 1,
-    paddingHorizontal: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
+  heroContainer: {
+    height: SCREEN_HEIGHT * 0.45,
+    width: '100%',
+    position: 'relative',
   },
-  backButton: {
+  heroImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  topBar: {
     position: 'absolute',
-    top: 20,
-    left: 20,
-    padding: 10,
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    top: Platform.OS === 'ios' ? 50 : 40,
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    zIndex: 10,
   },
-  illustrationContainer: {
-    marginBottom: 40,
+  backBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(0,0,0,0.3)',
     alignItems: 'center',
-  },
-  logoCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#E8EDF2',
     justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#4C669F',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 4,
+  },
+  welcomeContainer: {
+    position: 'absolute',
+    bottom: 60,
+    left: 24,
+  },
+  welcomeText: {
+    fontSize: 24,
+    color: 'white',
+    fontWeight: '600',
+    opacity: 0.9,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  brandText: {
+    fontSize: 42,
+    color: 'white',
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  bottomSheet: {
+    flex: 1,
+    backgroundColor: 'white',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: -40,
+    paddingTop: 30,
+    paddingHorizontal: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 20,
   },
   textContainer: {
     alignItems: 'center',
-    marginBottom: 50,
+    marginBottom: 30,
   },
   title: {
     fontSize: 28,
     fontWeight: '800',
     color: '#1C1C1E',
-    marginBottom: 12,
+    marginBottom: 8,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#636366',
     textAlign: 'center',
-    lineHeight: 24,
-    paddingHorizontal: 20,
+    lineHeight: 22,
+    paddingHorizontal: 10,
   },
   buttonContainer: {
     width: '100%',
@@ -224,9 +247,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#4C669F',
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 3,
   },
   gmailButtonText: {
@@ -245,9 +268,9 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#E5E5EA',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowRadius: 4,
     elevation: 1,
   },
   googleButtonText: {
@@ -288,8 +311,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   footer: {
-    marginTop: 40,
+    marginTop: 30,
     paddingHorizontal: 10,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
   },
   footerText: {
     fontSize: 13,

@@ -90,7 +90,7 @@ export default function AuthProvider({ children }) {
         onPress: async () => {
           try {
             await signOut(getAuth());
-            router.replace('/welcome');
+            router.replace('/onboarding');
           } catch (error) {
             console.error('Error signing out:', error);
           }

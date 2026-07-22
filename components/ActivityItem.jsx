@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, Alert } from 'react-native';
 
 // ─── Helper: relative time in Spanish ───
 function timeAgo(date) {
@@ -26,8 +26,24 @@ const numberFormatter = new Intl.NumberFormat('en-US', {
 });
 
 export default function ActivityItem({ item }) {
-  const isPayment = item.type === 'payment';
+  let isPayment = item.type === 'payment';
   const isSale = item.type === 'sale';
+
+  let badgeLabel = isSale ? 'Venta' : isPayment ? 'Abono' : 'Cargo';
+  let amountPrefix = isSale ? '' : isPayment ? '+' : '-';
+
+  if (item.clientId === 'global') {
+    const isIncrease = item.type === 'increase' || item.type === 'debt';
+    if (isIncrease) {
+      isPayment = true;
+      badgeLabel = 'Abono';
+      amountPrefix = '+';
+    } else {
+      isPayment = false;
+      badgeLabel = 'Resta';
+      amountPrefix = '-';
+    }
+  }
 
   // Color palette per type
   const palette = isSale
@@ -42,15 +58,17 @@ export default function ActivityItem({ item }) {
     ? 'arrow-up-circle'
     : 'arrow-down-circle';
 
-  const badgeLabel = isSale ? 'Venta' : isPayment ? 'Abono' : 'Cargo';
-
-  const amountPrefix = isSale ? '' : isPayment ? '+' : '-';
-
   return (
     <TouchableOpacity
       style={styles.activityItem}
       activeOpacity={0.65}
-      onPress={() => item.clientId && item.clientId !== 'global' && router.push(`/${item.clientId}`)}
+      onPress={() => {
+        if (item.clientId && item.clientId !== 'global') {
+          router.push(`/${item.clientId}`);
+        } else if (item.clientId === 'global' && item.description) {
+          Alert.alert('Detalle del Ajuste', item.description);
+        }
+      }}
     >
       {/* Left accent bar */}
       <View style={[styles.accentBar, { backgroundColor: palette.bar }]} />
@@ -61,7 +79,7 @@ export default function ActivityItem({ item }) {
 
       <View style={styles.activityInfo}>
         <Text style={styles.activityText} numberOfLines={1}>
-          {item.clientName}
+          {item.clientId === 'global' ? 'Ajuste de Saldo' : item.clientName}
         </Text>
         <Text style={styles.activityDescription} numberOfLines={1}>
           {isSale

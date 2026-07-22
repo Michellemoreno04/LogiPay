@@ -64,7 +64,7 @@ function ProductsScreenContent() {
   useEffect(() => {
     const checkTour = async () => {
       if (!user) return;
-      AsyncStorage.removeItem(`hasCreateProductTour_${user.uid}`);
+      //sAsyncStorage.removeItem(`hasCreateProductTour_${user.uid}`);
 
       try {
         const hasSeenTour = await AsyncStorage.getItem(`hasCreateProductTour_${user.uid}`);

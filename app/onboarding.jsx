@@ -5,16 +5,14 @@ import React, { useCallback, useRef, useState } from 'react';
 import {
   Dimensions,
   FlatList,
+  Image,
   Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import Animated, {
-  FadeIn,
-  FadeInUp,
-} from 'react-native-reanimated';
+import Animated, { FadeInUp } from 'react-native-reanimated';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -56,55 +54,28 @@ const BENEFITS = [
   },
 ];
 
-// ─── Full-screen Onboarding Slide ────────────────────────────────────────────
-function OnboardingSlide({ item, index, currentIndex }) {
+function OnboardingSlide({ item }) {
   return (
     <View style={styles.slideContainer}>
-      <View style={styles.slideContent}>
-        {/* Icon circle */}
-        <Animated.View entering={FadeIn.delay(300).duration(400)}>
-          <LinearGradient
-            colors={item.gradient}
-            style={styles.slideIconCircle}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-          >
-            <Ionicons name={item.icon} size={40} color="white" />
-          </LinearGradient>
-        </Animated.View>
-
-        {/* Title */}
-        <Animated.Text
-          entering={FadeInUp.delay(350).duration(500)}
-          style={styles.slideTitle}
-        >
-          {item.title}
-        </Animated.Text>
-
-        {/* Description */}
-        <Animated.Text
-          entering={FadeInUp.delay(450).duration(500)}
-          style={styles.slideDesc}
-        >
-          {item.desc}
-        </Animated.Text>
-
-        {/* Feature indicator */}
-        <Animated.View
-          entering={FadeIn.delay(550).duration(400)}
-          style={[styles.featureBadge, { backgroundColor: item.bg }]}
-        >
-          <Ionicons name="checkmark-circle" size={16} color={item.gradient[0]} />
-          <Text style={[styles.featureBadgeText, { color: item.gradient[0] }]}>
-            Incluido en LogiPay
-          </Text>
-        </Animated.View>
-      </View>
+      <Animated.View entering={FadeInUp.delay(200).duration(500)} style={[styles.iconContainer, { backgroundColor: item.bg }]}>
+        <Ionicons name={item.icon} size={32} color={item.gradient[0]} />
+      </Animated.View>
+      <Animated.Text
+        entering={FadeInUp.delay(300).duration(500)}
+        style={styles.slideTitle}
+      >
+        {item.title}
+      </Animated.Text>
+      <Animated.Text
+        entering={FadeInUp.delay(400).duration(500)}
+        style={styles.slideDesc}
+      >
+        {item.desc}
+      </Animated.Text>
     </View>
   );
 }
 
-// ─── Main Onboarding Screen ──────────────────────────────────────────────────
 export default function OnboardingScreen() {
   const router = useRouter();
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -116,7 +87,6 @@ export default function OnboardingScreen() {
       flatListRef.current?.scrollToIndex({ index: nextIndex, animated: true });
       setCurrentSlide(nextIndex);
     } else {
-      // Last slide — navigate to login
       router.push('/loginScreen');
     }
   }, [currentSlide]);
@@ -132,292 +102,240 @@ export default function OnboardingScreen() {
   }).current;
 
   const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
-
   const isLastSlide = currentSlide === BENEFITS.length - 1;
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#E8EEFF', '#F0F2F8', '#F8F9FA']}
-        style={StyleSheet.absoluteFill}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0.5, y: 1 }}
-      />
+      {/* Hero Image Background */}
+      <View style={styles.heroContainer}>
+        <Image
+          source={require('../assets/images/mujer-en-colmado.png')}
+          style={styles.heroImage}
+        />
+        <LinearGradient
+          colors={['rgba(0,0,0,0.4)', 'rgba(0,0,0,0.1)', '#F8F9FA']}
+          style={StyleSheet.absoluteFill}
+        />
+        
+        {/* Top Bar inside hero */}
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={handleSkip} style={styles.skipBtn}>
+            <Text style={styles.skipText}>Saltar</Text>
+          </TouchableOpacity>
+        </View>
 
-      {/* Decorative elements */}
-      <View style={styles.decorCircle1} />
-      <View style={styles.decorCircle2} />
-
-      {/* Top bar */}
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color="#4C669F" />
-        </TouchableOpacity>
-        <Text style={styles.topTitle}>Descubre LogiPay</Text>
-        <TouchableOpacity onPress={handleSkip} style={styles.skipBtn}>
-          <Text style={styles.skipText}>Saltar</Text>
-        </TouchableOpacity>
+        <View style={styles.welcomeContainer}>
+           <Text style={styles.welcomeText}>Bienvenido a</Text>
+           <Text style={styles.brandText}>LogiPay</Text>
+        </View>
       </View>
 
-      {/* Swipeable slides */}
-      <FlatList
-        ref={flatListRef}
-        data={BENEFITS}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(item) => item.title}
-        renderItem={({ item, index }) => (
-          <OnboardingSlide
-            item={item}
-            index={index}
-            currentIndex={currentSlide}
-          />
-        )}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
-        getItemLayout={(_, index) => ({
-          length: SCREEN_WIDTH,
-          offset: SCREEN_WIDTH * index,
-          index,
-        })}
-        style={styles.flatList}
-      />
+      {/* Bottom Sheet Card */}
+      <View style={styles.bottomSheet}>
+        <FlatList
+          ref={flatListRef}
+          data={BENEFITS}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item) => item.title}
+          renderItem={({ item }) => <OnboardingSlide item={item} />}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={viewabilityConfig}
+          getItemLayout={(_, index) => ({
+            length: SCREEN_WIDTH,
+            offset: SCREEN_WIDTH * index,
+            index,
+          })}
+          style={styles.flatList}
+        />
 
-      {/* Pagination dots */}
-      <View style={styles.pagination}>
-        {BENEFITS.map((_, index) => (
-          <View
-            key={index}
-            style={[
-              styles.dot,
-              currentSlide === index ? styles.dotActive : styles.dotInactive,
-            ]}
-          />
-        ))}
-      </View>
+        <View style={styles.pagination}>
+          {BENEFITS.map((_, index) => (
+            <View
+              key={index}
+              style={[
+                styles.dot,
+                currentSlide === index ? styles.dotActive : styles.dotInactive,
+              ]}
+            />
+          ))}
+        </View>
 
-      {/* Bottom CTA */}
-      <View style={styles.footer}>
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={handleContinue}
+          style={styles.ctaWrapper}
         >
           <LinearGradient
-            colors={isLastSlide
-              ? ['#4C669F', '#3B5998']
-              : ['rgba(255,255,255,0.2)', 'rgba(255,255,255,0.1)']
-            }
+            colors={['#4C669F', '#3B5998']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.ctaBtn}
           >
-            {isLastSlide ? (
-              <>
-                <Ionicons name="rocket-outline" size={20} color="white" />
-                <Text style={{ color: 'white', fontSize: 18, fontWeight: '700' }}>¡Comenzar ahora!</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.ctaText}>Siguiente</Text>
-                <Ionicons name="arrow-forward" size={20} color="white" />
-              </>
-            )}
+            <Text style={styles.ctaText}>
+              {isLastSlide ? '¡Comenzar ahora!' : 'Siguiente'}
+            </Text>
+            <Ionicons 
+              name={isLastSlide ? "rocket-outline" : "arrow-forward"} 
+              size={20} 
+              color="white" 
+            />
           </LinearGradient>
         </TouchableOpacity>
-
-        {/* Swipe hint */}
-        {!isLastSlide && (
-          <Text style={styles.swipeHint}>
-            Desliza para ver más →
-          </Text>
-        )}
       </View>
     </View>
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
   },
-
-  // ── Decorative ──
-  decorCircle1: {
-    position: 'absolute',
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: 'rgba(76, 102, 159, 0.08)',
-    top: -60,
-    right: -100,
+  heroContainer: {
+    height: SCREEN_HEIGHT * 0.55,
+    width: '100%',
+    position: 'relative',
   },
-  decorCircle2: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(124, 58, 237, 0.06)',
-    bottom: 100,
-    left: -60,
+  heroImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
   },
-
-  // ── Top Bar ──
   topBar: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 50 : 40,
+    width: '100%',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 50,
-    paddingBottom: 8,
+    zIndex: 10,
   },
   backBtn: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(76, 102, 159, 0.06)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  topTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#4C669F',
-    letterSpacing: 0.3,
   },
   skipBtn: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: 'rgba(76, 102, 159, 0.06)',
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    justifyContent: 'center',
   },
   skipText: {
     fontSize: 14,
-    color: '#4C669F',
+    color: 'white',
     fontWeight: '600',
   },
-
-  // ── FlatList ──
+  welcomeContainer: {
+    position: 'absolute',
+    bottom: 60,
+    left: 24,
+  },
+  welcomeText: {
+    fontSize: 24,
+    color: 'white',
+    fontWeight: '600',
+    opacity: 0.9,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  brandText: {
+    fontSize: 42,
+    color: 'white',
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  bottomSheet: {
+    flex: 1,
+    backgroundColor: 'white',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    marginTop: -40,
+    paddingTop: 30,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 20,
+  },
   flatList: {
     flex: 1,
   },
-
-  // ── Slide ──
   slideContainer: {
     width: SCREEN_WIDTH,
-    flex: 1,
-    justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: 32,
+    paddingTop: 10,
   },
-  slideContent: {
-    alignItems: 'center',
-    width: '100%',
-    backgroundColor: 'white',
-    borderRadius: 24,
-    padding: 32,
-    shadowColor: '#4C669F',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(76, 102, 159, 0.05)',
-  },
-  slideIconCircle: {
-    width: 88,
-    height: 88,
-    borderRadius: 28,
+  iconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 10,
+    marginBottom: 24,
   },
   slideTitle: {
-    fontSize: 30,
+    fontSize: 24,
     fontWeight: '800',
-    color: '#4C669F',
-    marginBottom: 14,
+    color: '#1F2937',
+    marginBottom: 12,
     textAlign: 'center',
-    letterSpacing: -0.3,
   },
   slideDesc: {
-    fontSize: 16,
-    color: '#4C669F',
+    fontSize: 15,
+    color: '#6B7280',
     textAlign: 'center',
     lineHeight: 24,
     paddingHorizontal: 10,
-    marginBottom: 20,
   },
-  featureBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    gap: 8,
-  },
-  featureBadgeText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
-  // ── Pagination ──
   pagination: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 16,
+    paddingVertical: 20,
   },
   dot: {
-    height: 8,
-    borderRadius: 4,
+    height: 6,
+    borderRadius: 3,
   },
   dotActive: {
-    width: 28,
+    width: 24,
     backgroundColor: '#4C669F',
   },
   dotInactive: {
-    width: 8,
-    backgroundColor: '#4C669F',
+    width: 6,
+    backgroundColor: '#E5E7EB',
   },
-
-  // ── Footer ──
-  footer: {
+  ctaWrapper: {
     paddingHorizontal: 24,
-    paddingBottom: Platform.OS === 'ios' ? 50 : 36,
-    paddingTop: 8,
-    alignItems: 'center',
+    marginTop: 10,
   },
   ctaBtn: {
     flexDirection: 'row',
-    height: 58,
-    borderRadius: 29,
+    height: 56,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    width: SCREEN_WIDTH - 48,
-    borderWidth: 1,
-    borderColor: '#4C669F',
   },
   ctaText: {
-    color: '#4C669F',
-    fontSize: 17,
+    color: 'white',
+    fontSize: 18,
     fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  swipeHint: {
-    fontSize: 13,
-    color: '#4C669F',
-    marginTop: 14,
-    fontWeight: '500',
-    letterSpacing: 0.3,
   },
 });

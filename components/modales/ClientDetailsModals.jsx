@@ -102,7 +102,7 @@ export default function ClientDetailsModals({
         transparent={true}
         onRequestClose={closeModal}
       >
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView
             contentContainerStyle={{ flexGrow: 1, justifyContent: 'flex-end', paddingTop: Platform.OS === 'ios' ? 60 : 20 }}
             keyboardShouldPersistTaps="handled"
