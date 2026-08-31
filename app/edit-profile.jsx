@@ -1,7 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useAuth } from '../authContext/authContext';
 
 export default function EditProfileScreen() {
@@ -11,6 +22,10 @@ export default function EditProfileScreen() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [businessName, setBusinessName] = useState('');
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [businessPhone, setBusinessPhone] = useState('');
+  const [businessRnc, setBusinessRnc] = useState('');
+  const [invoiceFooter, setInvoiceFooter] = useState('¡Gracias por su compra!');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -18,12 +33,16 @@ export default function EditProfileScreen() {
       setFirstName(userData.firstName || '');
       setLastName(userData.lastName || '');
       setBusinessName(userData.businessName || '');
+      setBusinessAddress(userData.businessAddress || '');
+      setBusinessPhone(userData.businessPhone || '');
+      setBusinessRnc(userData.businessRnc || '');
+      setInvoiceFooter(userData.invoiceFooter || '¡Gracias por su compra!');
     }
   }, [userData]);
 
   const handleSave = async () => {
     if (!firstName.trim() || !lastName.trim()) {
-      Alert.alert("Error", "Por favor completa el nombre y apellido.");
+      Alert.alert('Error', 'Por favor completa el nombre y apellido.');
       return;
     }
 
@@ -32,14 +51,18 @@ export default function EditProfileScreen() {
       await updateUserData({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        businessName: businessName.trim()
+        businessName: businessName.trim(),
+        businessAddress: businessAddress.trim(),
+        businessPhone: businessPhone.trim(),
+        businessRnc: businessRnc.trim(),
+        invoiceFooter: invoiceFooter.trim() || '¡Gracias por su compra!',
       });
-      Alert.alert("Éxito", "Perfil actualizado correctamente.", [
-        { text: "OK", onPress: () => router.back() }
+      Alert.alert('Éxito', 'Perfil actualizado correctamente.', [
+        { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (error) {
-      console.error("Error updating profile:", error);
-      Alert.alert("Error", "No se pudo actualizar el perfil.");
+      console.error('Error updating profile:', error);
+      Alert.alert('Error', 'No se pudo actualizar el perfil.');
     } finally {
       setLoading(false);
     }
@@ -58,9 +81,12 @@ export default function EditProfileScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Datos Personales */}
+        <Text style={styles.sectionHeader}>Información Personal</Text>
+
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Nombre</Text>
+          <Text style={styles.label}>Nombre *</Text>
           <TextInput
             style={styles.input}
             value={firstName}
@@ -70,7 +96,7 @@ export default function EditProfileScreen() {
         </View>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Apellido</Text>
+          <Text style={styles.label}>Apellido *</Text>
           <TextInput
             style={styles.input}
             value={lastName}
@@ -78,6 +104,10 @@ export default function EditProfileScreen() {
             placeholder="Ingresa tu apellido"
           />
         </View>
+
+        {/* Datos del Negocio y Facturación */}
+        <Text style={styles.sectionHeader}>Datos del Negocio y Facturación</Text>
+
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Nombre del Negocio</Text>
           <TextInput
@@ -86,6 +116,52 @@ export default function EditProfileScreen() {
             onChangeText={setBusinessName}
             placeholder="Ingresa el nombre de tu negocio"
           />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Dirección del Negocio</Text>
+          <TextInput
+            style={styles.input}
+            value={businessAddress}
+            onChangeText={setBusinessAddress}
+            placeholder="Ej. Av. 27 de Febrero #123"
+          />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Teléfono del Negocio</Text>
+          <TextInput
+            style={styles.input}
+            value={businessPhone}
+            onChangeText={setBusinessPhone}
+            placeholder="Ej. (809) 555-0199"
+            keyboardType="phone-pad"
+          />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>RNC / Identificación Fiscal (Opcional)</Text>
+          <TextInput
+            style={styles.input}
+            value={businessRnc}
+            onChangeText={setBusinessRnc}
+            placeholder="Ej. 130-12345-6"
+          />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Mensaje al Pie de Factura</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={invoiceFooter}
+            onChangeText={setInvoiceFooter}
+            placeholder="Ej. ¡Gracias por su compra!"
+            multiline
+            numberOfLines={3}
+          />
+          <Text style={styles.helperText}>
+            Este mensaje aparecerá en la parte inferior de tus recibos y facturas.
+          </Text>
         </View>
 
         <TouchableOpacity
@@ -130,58 +206,53 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
+    paddingBottom: 40,
+  },
+  sectionHeader: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#4F46E5',
+    marginTop: 12,
+    marginBottom: 16,
+    letterSpacing: 0.2,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 18,
   },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#8E8E93',
+    color: '#475569',
     marginBottom: 8,
     marginLeft: 4,
   },
   input: {
-    backgroundColor: '#F2F2F7',
+    backgroundColor: '#F8FAFC',
     borderRadius: 12,
     padding: 16,
-    fontSize: 16,
+    fontSize: 15,
     color: '#1C1C1E',
-  },
-  typeContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  typeButton: {
-    flex: 1,
-    backgroundColor: '#F2F2F7',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'transparent',
-    gap: 8,
+    borderColor: '#E2E8F0',
   },
-  typeButtonActive: {
-    backgroundColor: '#4C669F',
-    borderColor: '#4C669F',
+  textArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
-  typeButtonText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#4C669F',
-  },
-  typeButtonTextActive: {
-    color: 'white',
+  helperText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 6,
+    marginLeft: 4,
   },
   saveButton: {
-    backgroundColor: '#4C669F',
-    borderRadius: 12,
+    backgroundColor: '#4F46E5',
+    borderRadius: 14,
     padding: 18,
     alignItems: 'center',
-    marginTop: 20,
-    shadowColor: '#4C669F',
+    marginTop: 16,
+    marginBottom: 20,
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -191,5 +262,5 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
-  }
+  },
 });

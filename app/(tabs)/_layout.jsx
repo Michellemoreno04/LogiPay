@@ -1,7 +1,11 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../../authContext/authContext';
 
 export default function TabLayout() {
+  const { userData } = useAuth();
+  const isOrg = userData?.businessType === 'organization';
+
   return (
     <Tabs screenOptions={{
       tabBarActiveTintColor: '#4C669F',
@@ -36,6 +40,7 @@ export default function TabLayout() {
           headerShown: false,
           tabBarLabel: 'Productos',
           tabBarIcon: ({ color, size }) => <Ionicons name="pricetag" size={size} color={color} />,
+          href: isOrg ? null : '/products',
         }}
       />
       <Tabs.Screen

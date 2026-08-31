@@ -92,7 +92,7 @@ export default function SaleModal({ visible, onClose, onSave, product, clients =
   const unitPrice = product?.price ?? 0;
   const total = parsedQty * unitPrice;
   const stockOk = product?.stock < 0 || parsedQty <= (product?.stock ?? 0);
-  const isValid = selectedClient && parsedQty > 0 && stockOk;
+  const isValid = parsedQty > 0 && stockOk;
 
   const filteredClients = clients.filter((c) =>
     (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -103,8 +103,8 @@ export default function SaleModal({ visible, onClose, onSave, product, clients =
     if (!isValid) return;
     try {
       onSave({
-        clientId: selectedClient.id,
-        clientName: selectedClient.name,
+        clientId: selectedClient?.id || '',
+        clientName: selectedClient?.name || 'Venta al contado',
         quantity: parsedQty,
         unitPrice,
       });
@@ -112,8 +112,6 @@ export default function SaleModal({ visible, onClose, onSave, product, clients =
     } catch (error) {
       showAlert("Error al registrar la venta", "error");
     }
-
-
   };
 
   return (
@@ -172,24 +170,43 @@ export default function SaleModal({ visible, onClose, onSave, product, clients =
 
           {/* Seleccionar cliente */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Cliente *</Text>
-            <TouchableOpacity
-              style={styles.clientPickerBtn}
-              onPress={() => setShowClientPicker((v) => !v)}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="person-circle-outline" size={20} color="#4C669F" style={{ marginRight: 10 }} />
-              <Text style={[styles.clientPickerText, !selectedClient && styles.placeholderText]}>
-                {selectedClient ? selectedClient.name : 'Seleccionar cliente...'}
-              </Text>
-              <Ionicons
-                name={showClientPicker ? 'chevron-up' : 'chevron-down'}
-                size={18}
-                color="#8E8E93"
-              />
-            </TouchableOpacity>
+            <Text style={styles.label}>Cliente (Opcional)</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <TouchableOpacity
+                style={[styles.clientPickerBtn, { flex: 1 }]}
+                onPress={() => setShowClientPicker((v) => !v)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="person-circle-outline" size={20} color="#4C669F" style={{ marginRight: 10 }} />
+                <Text style={[styles.clientPickerText, !selectedClient && styles.placeholderText]}>
+                  {selectedClient ? selectedClient.name : 'Venta al contado (Sin cliente)'}
+                </Text>
+                <Ionicons
+                  name={showClientPicker ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color="#8E8E93"
+                />
+              </TouchableOpacity>
 
-
+              {selectedClient && (
+                <TouchableOpacity
+                  onPress={() => setSelectedClient(null)}
+                  style={{
+                    width: 44,
+                    height: 52,
+                    borderRadius: 14,
+                    backgroundColor: '#FFF0F0',
+                    borderWidth: 1.5,
+                    borderColor: '#FFD6D6',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="close" size={20} color="#FF3B30" />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           {/* Cantidad */}
@@ -285,6 +302,33 @@ export default function SaleModal({ visible, onClose, onSave, product, clients =
               keyExtractor={(item) => item.id}
               style={styles.clientList}
               keyboardShouldPersistTaps="handled"
+              ListHeaderComponent={
+                <TouchableOpacity
+                  style={[
+                    styles.clientOption,
+                    !selectedClient && styles.clientOptionSelected,
+                    { borderBottomWidth: 1, borderBottomColor: '#F0F2F8' },
+                  ]}
+                  onPress={() => {
+                    setSelectedClient(null);
+                    setShowClientPicker(false);
+                    setSearchQuery('');
+                  }}
+                >
+                  <View style={[styles.clientOptionAvatar, { backgroundColor: '#E8F5EE' }]}>
+                    <Ionicons name="cash-outline" size={18} color="#2D8C5A" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.clientOptionName, { color: '#2D8C5A', fontWeight: '700' }]}>
+                      Venta al contado
+                    </Text>
+                    <Text style={styles.clientOptionPhone}>Sin cliente asignado</Text>
+                  </View>
+                  {!selectedClient && (
+                    <Ionicons name="checkmark-circle" size={24} color="#2D8C5A" />
+                  )}
+                </TouchableOpacity>
+              }
               ListEmptyComponent={
                 <Text style={styles.emptyClients}>No se encontraron clientes</Text>
               }

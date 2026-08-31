@@ -31,7 +31,7 @@ const formatSaleDate = (date) => {
  * 1. Guarda en SQLite
  * 2. Encola en outbox para Firebase
  */
-export const createProduct = async ({ uid, name, price, description, stock }) => {
+export const createProduct = async ({ uid, name, price, description, stock, barcode, buyPrice, category, photoUri }) => {
   const productsRef = collection(db, 'users', uid, 'products');
   const productId = doc(productsRef).id;
   const now = Date.now();
@@ -42,6 +42,10 @@ export const createProduct = async ({ uid, name, price, description, stock }) =>
     price: parseFloat(price) || 0,
     description: description || '',
     stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
+    barcode: barcode || '',
+    buyPrice: parseFloat(buyPrice) || 0,
+    category: category || '',
+    photoUri: photoUri || '',
     createdAt: now,
   });
 
@@ -50,6 +54,10 @@ export const createProduct = async ({ uid, name, price, description, stock }) =>
     price: parseFloat(price) || 0,
     description: description || '',
     stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
+    barcode: barcode || '',
+    buyPrice: parseFloat(buyPrice) || 0,
+    category: category || '',
+    photoUri: photoUri || '',
     createdAt: 'SERVER_TIMESTAMP',
   }, 'set');
 
@@ -59,12 +67,16 @@ export const createProduct = async ({ uid, name, price, description, stock }) =>
 /**
  * Edita un producto existente.
  */
-export const editProduct = async ({ uid, productId, name, price, description, stock }) => {
+export const editProduct = async ({ uid, productId, name, price, description, stock, barcode, buyPrice, category, photoUri }) => {
   const changes = {
     name,
     price: parseFloat(price) || 0,
     description: description || '',
     stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
+    barcode: barcode || '',
+    buyPrice: parseFloat(buyPrice) || 0,
+    category: category || '',
+    photoUri: photoUri || '',
   };
 
   await updateProduct(uid, productId, changes);
@@ -113,8 +125,15 @@ export const recordSale = async ({ uid, productId, productName, clientId, client
   const salesRef = collection(db, 'users', uid, 'products', productId, 'sales');
   const saleId = doc(salesRef).id;
 
-  const txRef = collection(db, 'users', uid, 'clients', clientId, 'transactions');
-  const txId = doc(txRef).id;
+  const hasClient = Boolean(clientId);
+  const effectiveClientId = clientId || '';
+  const effectiveClientName = clientName || (hasClient ? '' : 'Venta al contado');
+
+  let txId = null;
+  if (hasClient) {
+    const txRef = collection(db, 'users', uid, 'clients', clientId, 'transactions');
+    txId = doc(txRef).id;
+  }
 
   const now = Date.now();
   const parsedQty = parseFloat(quantity) || 1;
@@ -122,43 +141,49 @@ export const recordSale = async ({ uid, productId, productName, clientId, client
   const totalAmount = parsedQty * parsedPrice;
   const date = formatSaleDate(new Date());
 
+  // Leer el precio de compra del producto para calcular ganancia
+  const productForBuyPrice = await getProductById(uid, productId);
+  const parsedBuyPrice = parseFloat(productForBuyPrice?.buyPrice) || 0;
+
   // 1. Guardar venta en SQLite
   await insertSale(uid, {
     id: saleId,
     productId,
-    clientId,
-    clientName,
+    clientId: effectiveClientId,
+    clientName: effectiveClientName,
     quantity: parsedQty,
     unitPrice: parsedPrice,
+    buyPrice: parsedBuyPrice,
     totalAmount,
     date,
     createdAt: now,
   });
 
-  // 2. Crear transacción de deuda para el cliente en SQLite
-  //    (mismo flujo que addTransaction en clientService.js)
-  const txTitle = `Compra: ${productName || 'Producto'}`;
-  await insertTransaction(uid, {
-    id: txId,
-    clientId,
-    type: 'debt',
-    amount: totalAmount,
-    title: txTitle,
-    description: txTitle,
-    date,
-    createdAt: now,
-  });
-
-  // 3. Actualizar balance del cliente en SQLite (deuda = balance negativo)
-  const client = await getClientById(uid, clientId);
-  if (client) {
-    await updateClient(uid, clientId, {
-      balance: (client.balance || 0) - totalAmount,
+  // 2. Crear transacción de deuda para el cliente en SQLite (si aplica)
+  if (hasClient && txId) {
+    const txTitle = `Compra: ${productName || 'Producto'}`;
+    await insertTransaction(uid, {
+      id: txId,
+      clientId,
+      type: 'debt',
+      amount: totalAmount,
+      title: txTitle,
+      description: txTitle,
+      date,
+      createdAt: now,
     });
-  }
 
-  // 4. Actualizar totalDebt del usuario en SQLite
-  await updateUserDataField(uid, 'totalDebt', totalAmount);
+    // 3. Actualizar balance del cliente en SQLite (deuda = balance negativo)
+    const client = await getClientById(uid, clientId);
+    if (client) {
+      await updateClient(uid, clientId, {
+        balance: (client.balance || 0) - totalAmount,
+      });
+    }
+
+    // 4. Actualizar totalDebt del usuario en SQLite
+    await updateUserDataField(uid, 'totalDebt', totalAmount);
+  }
 
   // 5. Actualizar stock si el producto lo maneja (stock >= 0)
   const product = await getProductById(uid, productId);
@@ -174,10 +199,11 @@ export const recordSale = async ({ uid, productId, productName, clientId, client
     `users/${uid}/products/${productId}/sales`,
     saleId,
     {
-      clientId,
-      clientName,
+      clientId: effectiveClientId,
+      clientName: effectiveClientName,
       quantity: parsedQty,
       unitPrice: parsedPrice,
+      buyPrice: parsedBuyPrice,
       totalAmount,
       date,
       createdAt: 'SERVER_TIMESTAMP',
@@ -185,29 +211,31 @@ export const recordSale = async ({ uid, productId, productName, clientId, client
     'set'
   );
 
-  // 7. Encolar transacción de deuda en outbox
-  await addToOutbox(
-    `users/${uid}/clients/${clientId}/transactions`,
-    txId,
-    { type: 'debt', amount: totalAmount, title: txTitle, description: txTitle, createdAt: 'SERVER_TIMESTAMP' },
-    'set'
-  );
+  // 7. Encolar transacciones de deuda en outbox si hay cliente
+  if (hasClient && txId) {
+    const txTitle = `Compra: ${productName || 'Producto'}`;
+    await addToOutbox(
+      `users/${uid}/clients/${clientId}/transactions`,
+      txId,
+      { type: 'debt', amount: totalAmount, title: txTitle, description: txTitle, createdAt: 'SERVER_TIMESTAMP' },
+      'set'
+    );
 
-  // 8. Encolar actualización de balance del cliente en outbox
-  await addToOutbox(
-    `users/${uid}/clients`,
-    clientId,
-    { balance: `INCREMENT_${-totalAmount}` },
-    'update'
-  );
+    await addToOutbox(
+      `users/${uid}/clients`,
+      clientId,
+      { balance: `INCREMENT_${-totalAmount}` },
+      'update'
+    );
 
-  // 9. Encolar actualización de totalDebt del usuario en outbox
-  await addToOutbox('users', uid, { totalDebt: `INCREMENT_${totalAmount}` }, 'update');
+    await addToOutbox('users', uid, { totalDebt: `INCREMENT_${totalAmount}` }, 'update');
+  }
 
   return {
     saleId,
     txId,
     totalAmount,
+    buyPrice: parsedBuyPrice,
     date,
     newStock,
   };

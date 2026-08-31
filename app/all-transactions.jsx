@@ -2,25 +2,57 @@ import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   DeviceEventEmitter,
-  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../authContext/authContext';
 import { db as firestore } from '../firebaseConfig/config';
 import {
-  getAllTransactions,
   getClients,
+  getRecentActivity,
   insertTransaction,
+  insertSale,
 } from '../utils/database';
 import { syncOutbox } from '../utils/syncEngine';
+
+// ─── Filter options ───
+const FILTERS = [
+  { key: 'today', label: 'Hoy' },
+  { key: 'week',  label: 'Semana' },
+  { key: 'month', label: 'Mes' },
+  { key: 'all',   label: 'Todo' },
+];
+
+// ─── Filter helper ───
+function filterByDate(txs, filter) {
+  const now = new Date();
+  return txs.filter((tx) => {
+    const d = tx._date instanceof Date ? tx._date : new Date(tx.createdAt);
+    if (filter === 'today') {
+      return d.getFullYear() === now.getFullYear() &&
+             d.getMonth()   === now.getMonth()    &&
+             d.getDate()    === now.getDate();
+    }
+    if (filter === 'week') {
+      const weekAgo = new Date(now);
+      weekAgo.setDate(now.getDate() - 7);
+      return d >= weekAgo;
+    }
+    if (filter === 'month') {
+      return d.getFullYear() === now.getFullYear() &&
+             d.getMonth()   === now.getMonth();
+    }
+    return true; // 'all'
+  });
+}
 
 // ─── Helper: relative time in Spanish ───
 function timeAgo(ts) {
@@ -44,6 +76,9 @@ export default function AllTransactionsScreen() {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState('today');
+
+  const filtered = useMemo(() => filterByDate(transactions, activeFilter), [transactions, activeFilter]);
 
   // ─── Cargar desde SQLite + sincronizar Firebase en background ───
   useEffect(() => {
@@ -52,18 +87,12 @@ export default function AllTransactionsScreen() {
     let unsubscribes = [];
 
     const loadFromSQLite = async () => {
-      // 1. Cargar transacciones desde SQLite (fuente de verdad)
-      const clients = await getClients(user.uid);
-      const clientMap = {};
-      clients.forEach((c) => { clientMap[c.id] = c.name; });
-
-      const txs = await getAllTransactions(user.uid, 200);
-      const hydrated = txs.map((tx) => ({
-        ...tx,
-        clientName: tx.clientName || clientMap[tx.clientId] || 'Sin nombre',
-        _date: new Date(tx.createdAt),
+      // Usar getRecentActivity que combina transacciones + ventas
+      const rows = await getRecentActivity(user.uid, 300);
+      const hydrated = rows.map((row) => ({
+        ...row,
+        _date: new Date(row.createdAt),
       }));
-
       if (isMounted) {
         setTransactions(hydrated);
         setLoading(false);
@@ -85,7 +114,6 @@ export default function AllTransactionsScreen() {
           );
           const unsub = onSnapshot(txQ, async (snap) => {
             if (!isMounted) return;
-            // Guardar en SQLite (INSERT OR REPLACE no duplica)
             for (const docSnap of snap.docs) {
               const data = docSnap.data();
               await insertTransaction(user.uid, {
@@ -101,7 +129,6 @@ export default function AllTransactionsScreen() {
                 createdAt: data.createdAt?.toMillis?.() || Date.now(),
               });
             }
-            // Recargar desde SQLite
             await loadFromSQLite();
           }, (err) => {
             console.warn('[AllTx] Firebase listener offline for client', client.id, err.code);
@@ -120,49 +147,73 @@ export default function AllTransactionsScreen() {
 
     init();
 
-    // Escuchar cambios locales (ej. nueva transacción agregada desde [id].jsx)
+    // Escuchar cambios locales
     const sub = DeviceEventEmitter.addListener('local-db-changed', loadFromSQLite);
+    const subSales = DeviceEventEmitter.addListener('sales-db-changed', loadFromSQLite);
 
     return () => {
       isMounted = false;
       unsubscribes.forEach((fn) => fn());
       sub.remove();
+      subSales.remove();
     };
   }, [user]);
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.activityItem}
-      activeOpacity={0.7}
-      onPress={() => item.clientId !== 'global' && router.push(`/${item.clientId}`)}
-    >
-      <View style={[
-        styles.activityIconBg,
-        { backgroundColor: item.type === 'payment' ? '#E8F9EE' : '#FDECEA' },
-      ]}>
-        <Ionicons
-          name={item.type === 'payment' ? 'add-circle' : 'remove-circle'}
-          size={24}
-          color={item.type === 'payment' ? '#34C759' : '#FF3B30'}
-        />
-      </View>
-      <View style={styles.activityInfo}>
-        <Text style={styles.activityText} numberOfLines={1}>
-          {item.clientName || 'Sin nombre'}
-        </Text>
-        <Text style={styles.activityDescription} numberOfLines={1}>
-          {item.title || item.description || '—'}
-        </Text>
-        <Text style={styles.activityTime}>{timeAgo(item.createdAt)}</Text>
-      </View>
-      <Text style={[
-        styles.activityAmount,
-        { color: item.type === 'payment' ? '#34C759' : '#FF3B30' },
-      ]}>
-        {item.type === 'payment' ? '+' : '-'}${item.amount?.toFixed(2) || '0.00'}
-      </Text>
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item }) => {
+    const isSale    = item.type === 'sale';
+    const isPayment = item.type === 'payment';
+
+    const palette = isSale
+      ? { bg: '#FFF8EC', icon: '#FF9500', text: '#FF9500' }
+      : isPayment
+      ? { bg: '#E8F9EE', icon: '#34C759', text: '#34C759' }
+      : { bg: '#FDECEA', icon: '#FF3B30', text: '#FF3B30' };
+
+    const iconName = isSale
+      ? 'cart'
+      : isPayment ? 'add-circle' : 'remove-circle';
+
+    const badgeLabel = isSale ? 'Venta' : isPayment ? 'Abono' : 'Cargo';
+    const amountPrefix = isSale ? '' : isPayment ? '+' : '-';
+
+    const title = isSale
+      ? (item.clientName || 'Venta al contado')
+      : (item.clientName || 'Sin nombre');
+
+    const subtitle = isSale
+      ? `🛒 ${item.description || item.productName || 'Producto'}`
+      : (item.title || item.description || '—');
+
+    return (
+      <TouchableOpacity
+        style={styles.activityItem}
+        activeOpacity={0.7}
+        onPress={() => item.clientId && item.clientId !== 'global' && router.push(`/${item.clientId}`)}
+      >
+        {/* Accent bar */}
+        <View style={[styles.accentBar, { backgroundColor: palette.icon }]} />
+
+        <View style={[styles.activityIconBg, { backgroundColor: palette.bg }]}>
+          <Ionicons name={iconName} size={22} color={palette.icon} />
+        </View>
+
+        <View style={styles.activityInfo}>
+          <Text style={styles.activityText} numberOfLines={1}>{title}</Text>
+          <Text style={styles.activityDescription} numberOfLines={1}>{subtitle}</Text>
+          <Text style={styles.activityTime}>{timeAgo(item.createdAt)}</Text>
+        </View>
+
+        <View style={styles.amountContainer}>
+          <Text style={[styles.activityAmount, { color: palette.text }]}>
+            {amountPrefix}${item.amount?.toFixed(2) || '0.00'}
+          </Text>
+          <View style={[styles.typeBadge, { backgroundColor: palette.bg }]}>
+            <Text style={[styles.typeText, { color: palette.text }]}>{badgeLabel}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -174,21 +225,39 @@ export default function AllTransactionsScreen() {
         <View style={{ width: 40 }} />
       </View>
 
+      {/* ─── Filter Tabs ─── */}
+      <View style={styles.filterWrapper}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+          {FILTERS.map((f) => (
+            <TouchableOpacity
+              key={f.key}
+              style={[styles.filterPill, activeFilter === f.key && styles.filterPillActive]}
+              onPress={() => setActiveFilter(f.key)}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.filterPillText, activeFilter === f.key && styles.filterPillTextActive]}>
+                {f.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#4C669F" />
           <Text style={styles.loadingText}>Cargando transacciones...</Text>
         </View>
-      ) : transactions.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="receipt-outline" size={80} color="#C7C7CC" />
-          <Text style={styles.emptyText}>No hay movimientos aún</Text>
-          <Text style={styles.emptySubText}>Tus transacciones aparecerán aquí</Text>
+          <Text style={styles.emptyText}>Sin movimientos</Text>
+          <Text style={styles.emptySubText}>No hay transacciones para este período</Text>
         </View>
       ) : (
         <View style={{ flex: 1, paddingHorizontal: 20 }}>
           <FlashList
-            data={transactions}
+            data={filtered}
             renderItem={renderItem}
             estimatedItemSize={90}
             contentContainerStyle={{ paddingBottom: 20, paddingTop: 10 }}
@@ -204,7 +273,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F2F2F7',
-    paddingTop: Platform.OS === 'android' ? 40 : 0,
+    paddingTop: 0,
   },
   header: {
     flexDirection: 'row',
@@ -213,6 +282,35 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 15,
     backgroundColor: '#F2F2F7',
+  },
+  filterWrapper: {
+    paddingVertical: 8,
+    backgroundColor: '#F2F2F7',
+  },
+  filterRow: {
+    paddingHorizontal: 20,
+    gap: 8,
+    flexDirection: 'row',
+  },
+  filterPill: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E5E5EA',
+  },
+  filterPillActive: {
+    backgroundColor: '#4C669F',
+    borderColor: '#4C669F',
+  },
+  filterPillText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#8E8E93',
+  },
+  filterPillTextActive: {
+    color: '#FFFFFF',
   },
   backButton: {
     width: 40,
@@ -265,42 +363,67 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'white',
     padding: 15,
-    borderRadius: 12,
-    marginBottom: 12,
+    borderRadius: 14,
+    marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 3,
     elevation: 2,
+    overflow: 'hidden',
+  },
+  accentBar: {
+    position: 'absolute',
+    left: 0,
+    top: 10,
+    bottom: 10,
+    width: 3,
+    borderRadius: 2,
   },
   activityIconBg: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
   activityInfo: {
     flex: 1,
-    marginLeft: 15,
+    marginLeft: 12,
   },
   activityText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1C1C1E',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A1F4B',
   },
   activityDescription: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#636366',
     marginTop: 2,
   },
   activityTime: {
-    fontSize: 12,
-    color: '#8E8E93',
+    fontSize: 11,
+    color: '#AEAEB2',
     marginTop: 4,
   },
+  amountContainer: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
   activityAmount: {
-    fontSize: 17,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  typeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  typeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });

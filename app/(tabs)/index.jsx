@@ -1,13 +1,14 @@
-import { FontAwesome6, Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
   Dimensions,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -15,31 +16,81 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { TourProvider, SnappySpringConfig, TourZone, useTour } from 'react-native-lumen';
+import { SnappySpringConfig, TourProvider, TourZone, useTour } from 'react-native-lumen';
 import { useAuth } from '../../authContext/authContext';
 import ActivityItem from '../../components/ActivityItem';
-import AdjustModal from '../../components/AdjustModal';
+
+import StatsCards from '../../components/StatsCards';
 import { useLocalData } from '../../context/LocalDataContext';
-import ComercialScreen from '../comercialScreen';
-import OrganisazionScreen from '../organisazionScreen';
 
 const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
   return (
     <TourProvider
-      stepsOrder={['step-1', 'step-2']}
-      config={{ springConfig: SnappySpringConfig, enableGlow: true, preventInteraction: true }}
+      stepsOrder={['step-1']}
+      config={{
+        springConfig: SnappySpringConfig,
+        enableGlow: true,
+        preventInteraction: true,
+        labels: { finish: 'Entendido' },
+        renderCard: () => null,
+      }}
     >
       <HomeScreenContent />
     </TourProvider>
   );
 }
 
+
 function HomeScreenContent() {
-  const { user, userData } = useAuth();
-  const { start, currentStep } = useTour();
+  const { user, userData, updateUserData } = useAuth();
+  const { start, currentStep, next, stop, steps, orderedStepKeys, scrollViewRef } = useTour();
   const { recentActivity } = useLocalData();
+
+  // ─── Date filter for activity ───
+  const ACTIVITY_FILTERS = [
+    { key: 'today', label: 'Hoy' },
+    { key: 'week', label: 'Semana' },
+    { key: 'month', label: 'Mes' },
+    { key: 'all', label: 'Todo' },
+  ];
+  const [activityFilter, setActivityFilter] = useState('today');
+
+  const filteredActivity = useMemo(() => {
+    const now = new Date();
+    return recentActivity.filter((item) => {
+      const d = item.createdAt ? new Date(item.createdAt) : null;
+      if (!d) return activityFilter === 'all';
+      if (activityFilter === 'today') {
+        return d.getFullYear() === now.getFullYear() &&
+          d.getMonth() === now.getMonth() &&
+          d.getDate() === now.getDate();
+      }
+      if (activityFilter === 'week') {
+        const weekAgo = new Date(now);
+        weekAgo.setDate(now.getDate() - 7);
+        return d >= weekAgo;
+      }
+      if (activityFilter === 'month') {
+        return d.getFullYear() === now.getFullYear() &&
+          d.getMonth() === now.getMonth();
+      }
+      return true;
+    });
+  }, [recentActivity, activityFilter]);
+
+  const [businessTypeMenuVisible, setBusinessTypeMenuVisible] = useState(false);
+
+  const handleChangeBusinessType = async (type) => {
+    setBusinessTypeMenuVisible(false);
+    if (type === userData?.businessType) return;
+    try {
+      await updateUserData({ businessType: type });
+    } catch (e) {
+      console.error('Error updating businessType:', e);
+    }
+  };
 
   const [loadingActivity, setLoadingActivity] = useState(false);
   // ─── FAB animation ───
@@ -48,6 +99,8 @@ function HomeScreenContent() {
   const headerSlide = useRef(new Animated.Value(-20)).current;
 
   useEffect(() => {
+
+
     Animated.parallel([
       Animated.spring(fabScale, {
         toValue: 1,
@@ -71,7 +124,6 @@ function HomeScreenContent() {
   useEffect(() => {
     const checkTour = async () => {
       if (!user) return;
-      //AsyncStorage.removeItem(`hasSeenTour_${user.uid}`);
 
       try {
         const hasSeenTour = await AsyncStorage.getItem(`hasSeenTour_${user.uid}`);
@@ -91,11 +143,6 @@ function HomeScreenContent() {
     checkTour();
   }, [user, start]);
 
-  const [adjustModalVisible, setAdjustModalVisible] = useState(false);
-
-  const openAdjustModal = () => {
-    setAdjustModalVisible(true);
-  };
 
   // ─── Get greeting based on time of day ───
   const getGreeting = () => {
@@ -108,7 +155,58 @@ function HomeScreenContent() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
+
+      {/* ─── Custom Tour Tooltip (positioned at top) ─── */}
+      {currentStep != null && steps[currentStep] && (() => {
+        const stepData = steps[currentStep];
+        const currentIdx = orderedStepKeys.indexOf(currentStep);
+        const isLast = currentIdx === orderedStepKeys.length - 1;
+        return (
+          <View
+            pointerEvents="box-none"
+            style={{
+              position: 'absolute',
+              top: Platform.OS === 'ios' ? 64 : 48,
+              left: 16,
+              right: 16,
+              zIndex: 9999,
+              backgroundColor: '#fff',
+              borderRadius: 18,
+              padding: 20,
+              shadowColor: '#1A1F4B',
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.18,
+              shadowRadius: 16,
+              elevation: 24,
+            }}
+          >
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1A1F4B', marginBottom: 6 }}>
+              {stepData.name}
+            </Text>
+            <Text style={{ fontSize: 14, color: '#555', lineHeight: 21, marginBottom: 18 }}>
+              {stepData.description}
+            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+              <TouchableOpacity
+                onPress={isLast ? stop : next}
+                style={{
+                  backgroundColor: '#4C669F',
+                  paddingHorizontal: 22,
+                  paddingVertical: 10,
+                  borderRadius: 12,
+                }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>
+                  {isLast ? 'Entendido' : 'Siguiente'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      })()}
+
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
       >
@@ -137,7 +235,11 @@ function HomeScreenContent() {
               {userData?.businessName || 'Tu Negocio'}
             </Text>
             <View style={styles.badgeRow}>
-              <View style={styles.businessBadge}>
+              <TouchableOpacity
+                style={styles.businessBadge}
+                onPress={() => setBusinessTypeMenuVisible(true)}
+                activeOpacity={0.75}
+              >
                 <Ionicons
                   name={userData?.businessType === 'organization' ? 'business' : 'storefront'}
                   size={14}
@@ -146,8 +248,75 @@ function HomeScreenContent() {
                 <Text style={styles.businessTypeTag}>
                   {userData?.businessType === 'organization' ? 'Organización' : 'Comercial'}
                 </Text>
-              </View>
+                <Ionicons name="chevron-down" size={12} color="#A8C0FF" />
+              </TouchableOpacity>
             </View>
+
+            {/* ─── Dropdown de tipo de negocio ─── */}
+            <Modal
+              visible={businessTypeMenuVisible}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setBusinessTypeMenuVisible(false)}
+            >
+              <TouchableOpacity
+                style={styles.menuOverlay}
+                activeOpacity={1}
+                onPress={() => setBusinessTypeMenuVisible(false)}
+              >
+                <View style={styles.menuCard}>
+                  <Text style={styles.menuTitle}>Tipo de Negocio</Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.menuOption,
+                      userData?.businessType === 'organization' && styles.menuOptionActive,
+                    ]}
+                    onPress={() => handleChangeBusinessType('organization')}
+                  >
+                    <Ionicons
+                      name="business"
+                      size={18}
+                      color={userData?.businessType === 'organization' ? '#4C669F' : '#8E8E93'}
+                    />
+                    <Text
+                      style={[
+                        styles.menuOptionText,
+                        userData?.businessType === 'organization' && styles.menuOptionTextActive,
+                      ]}
+                    >
+                      Organización
+                    </Text>
+                    {userData?.businessType === 'organization' && (
+                      <Ionicons name="checkmark-circle" size={18} color="#4C669F" style={{ marginLeft: 'auto' }} />
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.menuOption,
+                      userData?.businessType !== 'organization' && styles.menuOptionActive,
+                    ]}
+                    onPress={() => handleChangeBusinessType('commercial')}
+                  >
+                    <Ionicons
+                      name="storefront"
+                      size={18}
+                      color={userData?.businessType !== 'organization' ? '#4C669F' : '#8E8E93'}
+                    />
+                    <Text
+                      style={[
+                        styles.menuOptionText,
+                        userData?.businessType !== 'organization' && styles.menuOptionTextActive,
+                      ]}
+                    >
+                      Comercial
+                    </Text>
+                    {userData?.businessType !== 'organization' && (
+                      <Ionicons name="checkmark-circle" size={18} color="#4C669F" style={{ marginLeft: 'auto' }} />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            </Modal>
             <Text style={styles.subtitle}>Aquí tienes un resumen de hoy</Text>
           </Animated.View>
         </LinearGradient>
@@ -155,10 +324,10 @@ function HomeScreenContent() {
         {/* ─── Stats Cards ─── */}
         <View style={styles.cardsContainer}>
           <TourZone
-            stepKey="step-2"
+            stepKey="step-1"
             name="Resumen Financiero"
-            description="Aquí puedes ver el total de tus finanzas."
-            order={2}
+            description="Aquí puedes ver el total de tus finanzas y llevar el control de tus ingresos."
+            order={1}
             borderRadius={20}
           >
             <View style={styles.statsGrid}>
@@ -167,10 +336,8 @@ function HomeScreenContent() {
                 <View style={styles.skeletonCard}>
                   <ActivityIndicator size="small" color="#4C669F" />
                 </View>
-              ) : userData.businessType === 'organization' ? (
-                <OrganisazionScreen userData={userData} onAdjust={openAdjustModal} />
               ) : (
-                <ComercialScreen userData={userData} onAdjust={openAdjustModal} />
+                <StatsCards userData={userData} />
               )}
             </View>
           </TourZone>
@@ -194,62 +361,58 @@ function HomeScreenContent() {
             </TouchableOpacity>
           </View>
 
+          {/* ─── Filter Pills ─── */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.activityFilterRow}
+            style={styles.activityFilterScroll}
+          >
+            {ACTIVITY_FILTERS.map((f) => (
+              <TouchableOpacity
+                key={f.key}
+                style={[
+                  styles.activityFilterPill,
+                  activityFilter === f.key && styles.activityFilterPillActive,
+                ]}
+                onPress={() => setActivityFilter(f.key)}
+                activeOpacity={0.75}
+              >
+                <Text
+                  style={[
+                    styles.activityFilterText,
+                    activityFilter === f.key && styles.activityFilterTextActive,
+                  ]}
+                >
+                  {f.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
           {loadingActivity ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="small" color="#4C669F" />
               <Text style={styles.loadingText}>Cargando actividad...</Text>
             </View>
-          ) : recentActivity.length === 0 ? (
+          ) : filteredActivity.length === 0 ? (
             <View style={styles.emptyActivity}>
               <View style={styles.emptyIconBg}>
                 <Ionicons name="receipt-outline" size={36} color="#4C669F" />
               </View>
-              <Text style={styles.emptyText}>Aún no tienes actividad</Text>
+              <Text style={styles.emptyText}>Sin actividad</Text>
               <Text style={styles.emptySubText}>
-                Los registros de tus usuarios aparecerán aquí.
+                No hay registros para este período.
               </Text>
             </View>
           ) : (
-            recentActivity.map((item) => <ActivityItem key={item.id} item={item} />)
+            filteredActivity.map((item) => <ActivityItem key={item.id} item={item} />)
           )}
         </View>
       </ScrollView>
 
-      {/* ─── Ajuste Modal ─── */}
-      <AdjustModal
-        visible={adjustModalVisible}
-        onClose={() => setAdjustModalVisible(false)}
-        userData={userData}
-        user={user}
-      />
 
-      {/* ─── FAB ─── */}
-      <Animated.View style={[styles.fabContainer, { transform: [{ scale: fabScale }] }]}>
-        <TourZone
-          stepKey="step-1"
-          name="Agregar Cliente"
-          description="Aquí puedes agregar tus clientes."
-          order={1}
-          shape="circle"
-          borderRadius={16}
-        >
-          <TouchableOpacity
-            style={styles.fabButton}
-            onPress={() => router.push('/add-user')}
-            activeOpacity={0.85}
-            disabled={currentStep !== null}
-          >
-            <LinearGradient
-              colors={['#4C669F', '#3B5998', '#192f6a']}
-              style={styles.fabGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <FontAwesome6 name="user-plus" size={22} color="white" />
-            </LinearGradient>
-          </TouchableOpacity>
-        </TourZone>
-      </Animated.View>
+
     </View>
   );
 }
@@ -323,6 +486,57 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
+
+  // ─── Business Type Menu ───
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  menuCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    width: 280,
+    shadowColor: '#1A1F4B',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  menuTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  menuOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginHorizontal: 6,
+    marginVertical: 2,
+  },
+  menuOptionActive: {
+    backgroundColor: '#EEF2FF',
+  },
+  menuOptionText: {
+    fontSize: 15,
+    color: '#8E8E93',
+    fontWeight: '600',
+  },
+  menuOptionTextActive: {
+    color: '#1A1F4B',
+    fontWeight: '700',
+  },
   subtitle: {
     fontSize: 15,
     color: 'rgba(255,255,255,0.6)',
@@ -336,22 +550,21 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
   },
   skeletonCard: {
     flex: 1,
     margin: 4,
-    borderRadius: 20,
+    borderRadius: 14,
     backgroundColor: '#FFFFFF',
-    minHeight: 160,
+    minHeight: 110,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#4C669F',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 3,
   },
 
   // ─── Section ───
@@ -407,6 +620,35 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 14,
     color: '#8E8E93',
+  },
+  // ─── Activity Filter Pills ───
+  activityFilterScroll: {
+    marginBottom: 14,
+  },
+  activityFilterRow: {
+    gap: 8,
+    flexDirection: 'row',
+    paddingRight: 4,
+  },
+  activityFilterPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#E5E5EA',
+  },
+  activityFilterPillActive: {
+    backgroundColor: '#4C669F',
+    borderColor: '#4C669F',
+  },
+  activityFilterText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8E8E93',
+  },
+  activityFilterTextActive: {
+    color: '#FFFFFF',
   },
   emptyActivity: {
     alignItems: 'center',

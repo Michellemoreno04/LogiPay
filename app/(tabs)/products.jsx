@@ -1,5 +1,6 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -9,19 +10,36 @@ import {
   Animated,
   DeviceEventEmitter,
   FlatList,
+  Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  Vibration,
   View,
 } from 'react-native';
 import { SnappySpringConfig, TourProvider, TourZone, useTour } from 'react-native-lumen';
 import { useAuth } from '../../authContext/authContext';
-import ProductModal from '../../components/modales/ProductModal';
+import SaleModal from '../../components/modales/SaleModal';
 import { useLocalData } from '../../context/LocalDataContext';
 import { getSalesByProduct } from '../../utils/database';
-import { createProduct, deleteProduct, editProduct as editProductService } from '../../utils/productService';
+import { deleteProduct, recordSale } from '../../utils/productService';
+
+const CATEGORIES = [
+  { id: 'todos', label: 'Todos', icon: 'apps-outline', color: '#4C669F' },
+  { id: 'alimentos', label: 'Alimentos', icon: 'fast-food-outline', color: '#FF9500' },
+  { id: 'bebidas', label: 'Bebidas', icon: 'wine-outline', color: '#007AFF' },
+  { id: 'electronica', label: 'Electrónica', icon: 'hardware-chip-outline', color: '#5856D6' },
+  { id: 'ropa', label: 'Ropa', icon: 'shirt-outline', color: '#FF2D55' },
+  { id: 'hogar', label: 'Hogar', icon: 'home-outline', color: '#34C759' },
+  { id: 'salud', label: 'Salud', icon: 'medkit-outline', color: '#FF3B30' },
+  { id: 'cosmeticos', label: 'Cosméticos', icon: 'sparkles-outline', color: '#AF52DE' },
+  { id: 'herramientas', label: 'Herramientas', icon: 'construct-outline', color: '#8E8E93' },
+  { id: 'juguetes', label: 'Juguetes', icon: 'game-controller-outline', color: '#FFD60A' },
+  { id: 'otros', label: 'Otros', icon: 'ellipsis-horizontal-circle-outline', color: '#6C6C70' },
+];
 
 
 
@@ -29,10 +47,8 @@ import { createProduct, deleteProduct, editProduct as editProductService } from 
 export default function ProductsScreen() {
   return (
     <TourProvider
-      stepsOrder={['step-1']}
+      stepsOrder={['step-1', 'step-2']}
       config={{ springConfig: SnappySpringConfig, enableGlow: true, preventInteraction: true, labels: { finish: 'Entendido' } }}
-
-
     >
       <ProductsScreenContent />
     </TourProvider>
@@ -48,23 +64,38 @@ function ProductsScreenContent() {
     addProductOptimistic,
     editProductOptimistic,
     deleteProductOptimistic,
+    clients,
+    addSaleOptimistic,
+    addTransactionOptimistic,
   } = useLocalData();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [modalVisible, setModalVisible] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);
-  const [savingProduct, setSavingProduct] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('todos');
+
+  // Scanner state
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [scanned, setScanned] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+
+  // Sale Modal state
+  const [saleModalVisible, setSaleModalVisible] = useState(false);
+  const [selectedProductForSale, setSelectedProductForSale] = useState(null);
+  const [savingSale, setSavingSale] = useState(false);
 
   const fabScale = useRef(new Animated.Value(1)).current;
+  const scanFabScale = useRef(new Animated.Value(1)).current;
+  const scanLineAnim = useRef(new Animated.Value(0)).current;
 
-  const filteredProducts = products.filter((p) =>
-    (p.name || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredProducts = products.filter((p) => {
+    const matchesSearch = (p.name || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = selectedCategory === 'todos' || (p.category || '') === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
 
   useEffect(() => {
     const checkTour = async () => {
       if (!user) return;
-      //sAsyncStorage.removeItem(`hasCreateProductTour_${user.uid}`);
 
       try {
         const hasSeenTour = await AsyncStorage.getItem(`hasCreateProductTour_${user.uid}`);
@@ -84,45 +115,37 @@ function ProductsScreenContent() {
     checkTour();
   }, [user, start]);
 
+  useEffect(() => {
+    if (!scannerVisible) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scanLineAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
+        Animated.timing(scanLineAnim, { toValue: 0, duration: 2000, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [scannerVisible]);
 
   const handleOpenCreate = () => {
-    setEditingProduct(null);
-    setModalVisible(true);
+    router.push('/add-product');
   };
 
   const handleOpenEdit = (product) => {
-    setEditingProduct(product);
-    setModalVisible(true);
-  };
-
-  const handleSave = async ({ name, price, description, stock }) => {
-    if (!user) return;
-    setSavingProduct(true);
-    try {
-      if (editingProduct) {
-        // Editar
-        await editProductService({
-          uid: user.uid,
-          productId: editingProduct.id,
-          name,
-          price,
-          description,
-          stock,
-        });
-        editProductOptimistic({ productId: editingProduct.id, name, price, description, stock });
-      } else {
-        // Crear
-        const { productId } = await createProduct({ uid: user.uid, name, price, description, stock });
-        addProductOptimistic({ productId, name, price, description, stock });
-      }
-      DeviceEventEmitter.emit('products-db-changed');
-      setModalVisible(false);
-    } catch (e) {
-      Alert.alert('Error', 'No se pudo guardar el producto. Intenta de nuevo.');
-      console.error(e);
-    } finally {
-      setSavingProduct(false);
-    }
+    router.push({
+      pathname: '/add-product',
+      params: {
+        productId: product.id,
+        name: product.name || '',
+        price: product.price != null ? String(product.price) : '',
+        description: product.description || '',
+        stock: product.stock >= 0 ? String(product.stock) : '',
+        barcode: product.barcode || '',
+        buyPrice: product.buyPrice || '',
+        category: product.category || '',
+        photoUri: product.photoUri || '',
+      },
+    });
   };
 
   const handleDelete = (product) => {
@@ -164,6 +187,117 @@ function ProductsScreenContent() {
       Animated.spring(fabScale, { toValue: 1, useNativeDriver: true, tension: 200 }),
     ]).start();
     handleOpenCreate();
+  };
+
+  const openScanner = async () => {
+    if (!cameraPermission?.granted) {
+      const { granted } = await requestCameraPermission();
+      if (!granted) {
+        Alert.alert('Permiso denegado', 'Necesitamos acceso a tu cámara para escanear productos.');
+        return;
+      }
+    }
+    setTorchOn(false);
+    setScanned(false);
+    setScannerVisible(true);
+  };
+
+  const pressScanFab = () => {
+    Animated.sequence([
+      Animated.spring(scanFabScale, { toValue: 0.9, useNativeDriver: true, tension: 200 }),
+      Animated.spring(scanFabScale, { toValue: 1, useNativeDriver: true, tension: 200 }),
+    ]).start();
+    router.push('/quick-scan');
+  };
+
+  const handleBarCodeScanned = ({ data }) => {
+    if (scanned) return;
+    setScanned(true);
+    Vibration.vibrate(200);
+    setScannerVisible(false);
+    setTorchOn(false);
+
+    const matchedProduct = products.find(
+      (p) => p.barcode && String(p.barcode).trim() === String(data).trim()
+    );
+
+    if (matchedProduct) {
+      setSelectedProductForSale(matchedProduct);
+      setSaleModalVisible(true);
+    } else {
+      Alert.alert(
+        'Producto no encontrado',
+        `No existe ningún producto guardado con el código de barras: ${data}`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Agregar producto y vender',
+            onPress: () => {
+              router.push({
+                pathname: '/add-product',
+                params: { barcode: data },
+              });
+            },
+          },
+        ]
+      );
+    }
+  };
+
+  const handleRecordSale = async ({ clientId, clientName, quantity, unitPrice }) => {
+    if (!user || !selectedProductForSale) return;
+    setSavingSale(true);
+    try {
+      const result = await recordSale({
+        uid: user.uid,
+        productId: selectedProductForSale.id,
+        productName: selectedProductForSale.name || '',
+        clientId,
+        clientName,
+        quantity,
+        unitPrice,
+      });
+
+      addSaleOptimistic({
+        saleId: result.saleId,
+        productId: selectedProductForSale.id,
+        clientId,
+        clientName,
+        quantity,
+        unitPrice,
+        buyPrice: result.buyPrice,
+        totalAmount: result.totalAmount,
+        date: result.date,
+        newStock: result.newStock,
+        productName: selectedProductForSale.name || '',
+      });
+
+      addTransactionOptimistic({
+        txId: result.txId,
+        clientId,
+        clientName,
+        type: 'debt',
+        amount: result.totalAmount,
+        title: `Compra: ${selectedProductForSale.name || 'Producto'}`,
+        description: `Compra: ${selectedProductForSale.name || 'Producto'}`,
+      });
+
+      if (updateLocalUserData) {
+        updateLocalUserData({
+          totalDebt: (userData?.totalDebt || 0) + result.totalAmount,
+        });
+      }
+
+      DeviceEventEmitter.emit('products-db-changed');
+      DeviceEventEmitter.emit('local-db-changed');
+      setSaleModalVisible(false);
+      setSelectedProductForSale(null);
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo registrar la venta. Intenta de nuevo.');
+      console.error(e);
+    } finally {
+      setSavingSale(false);
+    }
   };
 
   const renderProduct = ({ item }) => (
@@ -258,6 +392,42 @@ function ProductsScreenContent() {
         </View>
       </LinearGradient>
 
+      {/* ─── Category Filter Bar ─── */}
+      <View style={styles.categoryBarWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryBarContent}
+        >
+          {CATEGORIES.map((cat) => {
+            const isActive = selectedCategory === cat.id;
+            // Only show category if it's 'todos' or has products in that category
+            const hasProducts = cat.id === 'todos' || products.some((p) => (p.category || '') === cat.id);
+            if (!hasProducts) return null;
+            return (
+              <TouchableOpacity
+                key={cat.id}
+                style={[
+                  styles.categoryChip,
+                  isActive && { backgroundColor: cat.color, borderColor: cat.color },
+                ]}
+                onPress={() => setSelectedCategory(cat.id)}
+                activeOpacity={0.75}
+              >
+                <Ionicons
+                  name={cat.icon}
+                  size={14}
+                  color={isActive ? '#fff' : cat.color}
+                />
+                <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>
+                  {cat.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
+
       {/* ─── List ─── */}
       <FlatList
         data={filteredProducts}
@@ -289,47 +459,132 @@ function ProductsScreenContent() {
                 : 'Crea tu primer producto y empieza a registrar ventas'}
             </Text>
             {!searchQuery && (
-              <TourZone stepKey='step-1'
-
-                name='Crear Producto'
-                description='Aqui puedes crear productos que estaras vendiendo.'
-                order={1}
-                borderRadius={20} >
-                <TouchableOpacity style={styles.emptyBtn} onPress={handleOpenCreate}>
-                  <LinearGradient
-                    colors={['#4C669F', '#2D3A8C']}
-                    style={styles.emptyBtnGradient}
-                  >
-                    <Ionicons name="add" size={20} color="#fff" />
-                    <Text style={styles.emptyBtnText}>Crear producto</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </TourZone>
+              <TouchableOpacity style={styles.emptyBtn} onPress={handleOpenCreate}>
+                <LinearGradient
+                  colors={['#4C669F', '#2D3A8C']}
+                  style={styles.emptyBtnGradient}
+                >
+                  <Ionicons name="add" size={20} color="#fff" />
+                  <Text style={styles.emptyBtnText}>Crear producto</Text>
+                </LinearGradient>
+              </TouchableOpacity>
             )}
           </View>
         }
       />
 
-      {/* ─── FAB ─── */}
-      <Animated.View style={[styles.fabContainer, { transform: [{ scale: fabScale }] }]}>
-        <TouchableOpacity style={styles.fabButton} onPress={pressFab} activeOpacity={0.85}>
-          <LinearGradient
-            colors={['#4C669F', '#3B5998', '#192f6a']}
-            style={styles.fabGradient}
+      {/* ─── FAB Container ─── */}
+      <View style={styles.fabContainer}>
+        {/* Scanner FAB (above Add Product) */}
+        <Animated.View style={{ transform: [{ scale: scanFabScale }] }}>
+          <TourZone
+            stepKey="step-2"
+            name="Escanear Producto"
+            description="Presiona aquí para escanear el código de barras de un producto y registrar una venta rápidamente."
+            order={2}
+            borderRadius={28}
           >
-            <Ionicons name="add" size={28} color="white" />
-          </LinearGradient>
-        </TouchableOpacity>
-      </Animated.View>
+            <TouchableOpacity style={styles.scanFabButton} onPress={pressScanFab} activeOpacity={0.85}>
+              <LinearGradient
+                colors={['#2D8C5A', '#1A4B2F']}
+                style={styles.fabGradient}
+              >
+                <MaterialCommunityIcons name="barcode-scan" size={24} color="white" />
+              </LinearGradient>
+            </TouchableOpacity>
+          </TourZone>
+        </Animated.View>
 
-      {/* ─── Modals ─── */}
-      <ProductModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onSave={handleSave}
-        editProduct={editingProduct}
-        loading={savingProduct}
+        {/* Add Product FAB */}
+        <Animated.View style={{ transform: [{ scale: fabScale }] }}>
+          <TourZone
+            stepKey="step-1"
+            name="Crear Producto"
+            description="Aquí puedes crear los productos que estarás vendiendo."
+            order={1}
+            borderRadius={31}
+          >
+            <TouchableOpacity style={styles.fabButton} onPress={pressFab} activeOpacity={0.85}>
+              <LinearGradient
+                colors={['#4C669F', '#3B5998', '#192f6a']}
+                style={styles.fabGradient}
+              >
+                <Ionicons name="add" size={28} color="white" />
+              </LinearGradient>
+            </TouchableOpacity>
+          </TourZone>
+        </Animated.View>
+      </View>
+
+      {/* ─── Scanner Modal ─── */}
+      <Modal
+        visible={scannerVisible}
+        animationType="slide"
+        onRequestClose={() => { setScannerVisible(false); setTorchOn(false); }}
+      >
+        <View style={styles.scannerContainer}>
+          <CameraView
+            style={StyleSheet.absoluteFillObject}
+            facing="back"
+            enableTorch={torchOn}
+            onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+            barcodeScannerSettings={{
+              barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'code93', 'qr', 'pdf417', 'aztec', 'datamatrix'],
+            }}
+          />
+          <View style={styles.scannerOverlay}>
+            <View style={styles.scanOverlayTop}>
+              <TouchableOpacity
+                style={styles.torchBtn}
+                onPress={() => setTorchOn(!torchOn)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name={torchOn ? "flash" : "flash-outline"} size={20} color={torchOn ? "#FFD60A" : "#fff"} />
+                <Text style={styles.torchBtnText}>{torchOn ? 'Flash ON' : 'Flash OFF'}</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.scanOverlayMiddle}>
+              <View style={styles.scanOverlaySide} />
+              <View style={styles.scanFrame}>
+                <View style={[styles.corner, styles.cornerTL]} />
+                <View style={[styles.corner, styles.cornerTR]} />
+                <View style={[styles.corner, styles.cornerBL]} />
+                <View style={[styles.corner, styles.cornerBR]} />
+                <Animated.View
+                  style={[
+                    styles.scanLine,
+                    { transform: [{ translateY: scanLineAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 220] }) }] },
+                  ]}
+                />
+              </View>
+              <View style={styles.scanOverlaySide} />
+            </View>
+            <View style={styles.scanOverlayBottom}>
+              <Text style={styles.scanHint}>Enfoca el código de barras para escanear y vender</Text>
+              <TouchableOpacity
+                style={styles.scanCancelBtn}
+                onPress={() => { setScannerVisible(false); setTorchOn(false); }}
+              >
+                <Text style={styles.scanCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── Sale Modal ─── */}
+      <SaleModal
+        visible={saleModalVisible}
+        onClose={() => {
+          setSaleModalVisible(false);
+          setSelectedProductForSale(null);
+        }}
+        onSave={handleRecordSale}
+        product={selectedProductForSale}
+        clients={clients}
+        loading={savingSale}
       />
+
     </View>
   );
 }
@@ -392,8 +647,44 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 15, color: '#fff', fontWeight: '500' },
 
+  // Category bar
+  categoryBarWrapper: {
+    backgroundColor: '#F0F2F8',
+    paddingTop: 14,
+    paddingBottom: 2,
+  },
+  categoryBarContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    flexDirection: 'row',
+  },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1.5,
+    borderColor: '#E0E4F0',
+    shadowColor: '#4C669F',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  categoryChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#555',
+  },
+  categoryChipTextActive: {
+    color: '#fff',
+  },
+
   // List
-  listContent: { padding: 16, paddingBottom: 110 },
+  listContent: { padding: 16, paddingBottom: 160 },
   sectionLabel: {
     fontSize: 13,
     fontWeight: '600',
@@ -497,7 +788,24 @@ const styles = StyleSheet.create({
   emptyBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 
   // FAB
-  fabContainer: { position: 'absolute', bottom: 28, right: 24 },
+  fabContainer: {
+    position: 'absolute',
+    bottom: 28,
+    right: 24,
+    alignItems: 'center',
+    gap: 14,
+  },
+  scanFabButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    overflow: 'hidden',
+    shadowColor: '#1A4B2F',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 8,
+  },
   fabButton: {
     width: 62,
     height: 62,
@@ -515,4 +823,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // Scanner Modal
+  scannerContainer: { flex: 1, backgroundColor: '#000' },
+  scannerOverlay: { ...StyleSheet.absoluteFillObject, flexDirection: 'column' },
+  scanOverlayTop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)', alignItems: 'flex-end', justifyContent: 'flex-start', paddingTop: 50, paddingRight: 20 },
+  torchBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.3)' },
+  torchBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  scanOverlayMiddle: { flexDirection: 'row', height: 240 },
+  scanOverlaySide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)' },
+  scanOverlayBottom: { flex: 1.2, backgroundColor: 'rgba(0,0,0,0.62)', alignItems: 'center', justifyContent: 'center', gap: 20, paddingTop: 20 },
+  scanFrame: { width: 240, height: 240, position: 'relative', justifyContent: 'center', alignItems: 'center' },
+  corner: { position: 'absolute', width: 28, height: 28, borderColor: '#2D8C5A', borderWidth: 3.5 },
+  cornerTL: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0, borderTopLeftRadius: 6 },
+  cornerTR: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0, borderTopRightRadius: 6 },
+  cornerBL: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0, borderBottomLeftRadius: 6 },
+  cornerBR: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0, borderBottomRightRadius: 6 },
+  scanLine: { position: 'absolute', top: 0, left: 4, right: 4, height: 2, backgroundColor: '#2D8C5A', borderRadius: 1, shadowColor: '#2D8C5A', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 6 },
+  scanHint: { fontSize: 14, color: 'rgba(255,255,255,0.75)', textAlign: 'center', fontWeight: '500', paddingHorizontal: 32 },
+  scanCancelBtn: { paddingHorizontal: 32, paddingVertical: 13, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 28, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  scanCancelText: { fontSize: 15, fontWeight: '700', color: '#fff' },
 });
+

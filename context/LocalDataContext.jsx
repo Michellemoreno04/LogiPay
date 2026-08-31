@@ -16,6 +16,7 @@ import {
   getProducts,
   getRecentActivity,
   getRecentSales,
+  getSalesSince,
   initDB,
   insertClient,
   insertTransaction,
@@ -35,6 +36,7 @@ export function LocalDataProvider({ children }) {
   // ─ Productos y Ventas ─
   const [products, setProductsState] = useState([]);
   const [recentSales, setRecentSalesState] = useState([]);
+  const [todaySales, setTodaySalesState] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
 
   // Para compatibilidad con [id].jsx y all-transactions.jsx
@@ -196,9 +198,13 @@ export function LocalDataProvider({ children }) {
     const loadProducts = async () => {
       const prods = await getProducts(user.uid);
       const sales = await getRecentSales(user.uid, 10);
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const tSales = await getSalesSince(user.uid, startOfToday);
       if (isMounted) {
         setProductsState(prods);
         setRecentSalesState(sales);
+        setTodaySalesState(tSales);
         setLoadingProducts(false);
       }
     };
@@ -382,9 +388,10 @@ export function LocalDataProvider({ children }) {
   const deleteProductOptimistic = useCallback((productId) => {
     setProductsState((prev) => prev.filter((p) => p.id !== productId));
     setRecentSalesState((prev) => prev.filter((s) => s.productId !== productId));
+    setTodaySalesState((prev) => prev.filter((s) => s.productId !== productId));
   }, []);
 
-  const addSaleOptimistic = useCallback(({ saleId, productId, clientId, clientName, quantity, unitPrice, totalAmount, date, newStock, productName }) => {
+  const addSaleOptimistic = useCallback(({ saleId, productId, clientId, clientName, quantity, unitPrice, buyPrice, totalAmount, date, newStock, productName }) => {
     const now = Date.now();
     const newSale = {
       id: saleId,
@@ -393,11 +400,13 @@ export function LocalDataProvider({ children }) {
       clientName,
       quantity,
       unitPrice,
+      buyPrice: buyPrice ?? 0,
       totalAmount,
       date,
       createdAt: now,
     };
     setRecentSalesState((prev) => [newSale, ...prev].slice(0, 10));
+    setTodaySalesState((prev) => [newSale, ...prev]);
 
     // Agregar también a actividad reciente (home screen)
     const activityItem = {
@@ -426,6 +435,7 @@ export function LocalDataProvider({ children }) {
 
   const deleteSaleOptimistic = useCallback(({ saleId, productId, quantity }) => {
     setRecentSalesState((prev) => prev.filter((s) => s.id !== saleId));
+    setTodaySalesState((prev) => prev.filter((s) => s.id !== saleId));
     // Revertir stock optimistamente
     setProductsState((prev) =>
       prev.map((p) =>
@@ -444,6 +454,7 @@ export function LocalDataProvider({ children }) {
     // Productos y Ventas
     products,
     recentSales,
+    todaySales,
     loadingProducts,
     // Acciones optimistas – clientes
     addClientOptimistic,

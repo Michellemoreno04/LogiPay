@@ -45,6 +45,10 @@ export const initDB = async () => {
           uid TEXT PRIMARY KEY,
           businessName TEXT DEFAULT '',
           businessType TEXT DEFAULT 'commercial',
+          businessAddress TEXT DEFAULT '',
+          businessPhone TEXT DEFAULT '',
+          businessRnc TEXT DEFAULT '',
+          invoiceFooter TEXT DEFAULT '¡Gracias por su compra!',
           totalPayment REAL DEFAULT 0,
           totalDebt REAL DEFAULT 0,
           updatedAt INTEGER NOT NULL
@@ -82,6 +86,10 @@ export const initDB = async () => {
           price REAL NOT NULL DEFAULT 0,
           description TEXT DEFAULT '',
           stock REAL DEFAULT -1,
+          barcode TEXT DEFAULT '',
+          buyPrice REAL DEFAULT 0,
+          category TEXT DEFAULT '',
+          photoUri TEXT DEFAULT '',
           createdAt INTEGER NOT NULL
         );
       `);
@@ -96,6 +104,7 @@ export const initDB = async () => {
           clientName TEXT DEFAULT '',
           quantity REAL NOT NULL,
           unitPrice REAL NOT NULL,
+          buyPrice REAL NOT NULL DEFAULT 0,
           totalAmount REAL NOT NULL,
           date TEXT DEFAULT '',
           createdAt INTEGER NOT NULL
@@ -117,6 +126,26 @@ export const initDB = async () => {
           await database.execAsync("ALTER TABLE products ADD COLUMN stock REAL DEFAULT -1");
           console.log("[Migration] Added 'stock' column to products table.");
         }
+        const hasProductBarcode = productsInfo.some(col => col.name === 'barcode');
+        const hasProductBuyPrice = productsInfo.some(col => col.name === 'buyPrice');
+        const hasProductCategory = productsInfo.some(col => col.name === 'category');
+        const hasProductPhotoUri = productsInfo.some(col => col.name === 'photoUri');
+        if (!hasProductBarcode) {
+          await database.execAsync("ALTER TABLE products ADD COLUMN barcode TEXT DEFAULT ''");
+          console.log("[Migration] Added 'barcode' column to products table.");
+        }
+        if (!hasProductBuyPrice) {
+          await database.execAsync("ALTER TABLE products ADD COLUMN buyPrice REAL DEFAULT 0");
+          console.log("[Migration] Added 'buyPrice' column to products table.");
+        }
+        if (!hasProductCategory) {
+          await database.execAsync("ALTER TABLE products ADD COLUMN category TEXT DEFAULT ''");
+          console.log("[Migration] Added 'category' column to products table.");
+        }
+        if (!hasProductPhotoUri) {
+          await database.execAsync("ALTER TABLE products ADD COLUMN photoUri TEXT DEFAULT ''");
+          console.log("[Migration] Added 'photoUri' column to products table.");
+        }
 
         // Migración para 'transactions'
         const txInfo = await database.getAllAsync("PRAGMA table_info(transactions)");
@@ -124,6 +153,34 @@ export const initDB = async () => {
         if (!hasTxDesc) {
           await database.execAsync("ALTER TABLE transactions ADD COLUMN description TEXT DEFAULT ''");
           console.log("[Migration] Added 'description' column to transactions table.");
+        }
+
+        // Migración para 'sales' – agregar buyPrice
+        const salesInfo = await database.getAllAsync("PRAGMA table_info(sales)");
+        const hasSalesBuyPrice = salesInfo.some(col => col.name === 'buyPrice');
+        if (!hasSalesBuyPrice) {
+          await database.execAsync("ALTER TABLE sales ADD COLUMN buyPrice REAL NOT NULL DEFAULT 0");
+          console.log("[Migration] Added 'buyPrice' column to sales table.");
+        }
+
+        // Migración para 'user_data' – agregar datos de facturación
+        const userDataInfo = await database.getAllAsync("PRAGMA table_info(user_data)");
+        const hasAddress = userDataInfo.some(col => col.name === 'businessAddress');
+        const hasPhone = userDataInfo.some(col => col.name === 'businessPhone');
+        const hasRnc = userDataInfo.some(col => col.name === 'businessRnc');
+        const hasFooter = userDataInfo.some(col => col.name === 'invoiceFooter');
+
+        if (!hasAddress) {
+          await database.execAsync("ALTER TABLE user_data ADD COLUMN businessAddress TEXT DEFAULT ''");
+        }
+        if (!hasPhone) {
+          await database.execAsync("ALTER TABLE user_data ADD COLUMN businessPhone TEXT DEFAULT ''");
+        }
+        if (!hasRnc) {
+          await database.execAsync("ALTER TABLE user_data ADD COLUMN businessRnc TEXT DEFAULT ''");
+        }
+        if (!hasFooter) {
+          await database.execAsync("ALTER TABLE user_data ADD COLUMN invoiceFooter TEXT DEFAULT '¡Gracias por su compra!'");
         }
       } catch (error) {
         console.error("[Migration] Error checking or adding columns:", error);
@@ -404,12 +461,16 @@ export const saveUserData = async (uid, data) => {
     const database = await initDB();
     await database.runAsync(
       `INSERT OR REPLACE INTO user_data
-       (uid, businessName, businessType, totalPayment, totalDebt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+       (uid, businessName, businessType, businessAddress, businessPhone, businessRnc, invoiceFooter, totalPayment, totalDebt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         uid,
         data.businessName || '',
         data.businessType || 'commercial',
+        data.businessAddress || '',
+        data.businessPhone || '',
+        data.businessRnc || '',
+        data.invoiceFooter ?? '¡Gracias por su compra!',
         data.totalPayment ?? 0,
         data.totalDebt ?? 0,
         Date.now(),
@@ -590,8 +651,8 @@ export const insertProduct = async (uid, product) => {
   try {
     const database = await initDB();
     await database.runAsync(
-      `INSERT OR REPLACE INTO products (id, uid, name, price, description, stock, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO products (id, uid, name, price, description, stock, barcode, buyPrice, category, photoUri, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         product.id,
         uid,
@@ -599,6 +660,10 @@ export const insertProduct = async (uid, product) => {
         product.price ?? 0,
         product.description || '',
         product.stock ?? -1,
+        product.barcode || '',
+        parseFloat(product.buyPrice) || 0,
+        product.category || '',
+        product.photoUri || '',
         product.createdAt ?? Date.now(),
       ]
     );
@@ -667,8 +732,8 @@ export const insertSale = async (uid, sale) => {
     const database = await initDB();
     await database.runAsync(
       `INSERT OR REPLACE INTO sales
-       (id, uid, productId, clientId, clientName, quantity, unitPrice, totalAmount, date, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, uid, productId, clientId, clientName, quantity, unitPrice, buyPrice, totalAmount, date, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         sale.id,
         uid,
@@ -677,6 +742,7 @@ export const insertSale = async (uid, sale) => {
         sale.clientName || '',
         sale.quantity,
         sale.unitPrice,
+        sale.buyPrice ?? 0,
         sale.totalAmount,
         sale.date || '',
         sale.createdAt ?? Date.now(),
@@ -727,6 +793,19 @@ export const getRecentSales = async (uid, limit = 5) => {
   }
 };
 
+export const getSalesSince = async (uid, timestamp) => {
+  try {
+    const database = await initDB();
+    return await database.getAllAsync(
+      'SELECT s.*, p.name as productName FROM sales s LEFT JOIN products p ON s.productId = p.id WHERE s.uid = ? AND s.createdAt >= ? ORDER BY s.createdAt DESC',
+      [uid, timestamp]
+    );
+  } catch (error) {
+    console.error('Error in getSalesSince:', error);
+    return [];
+  }
+};
+
 export const deleteSaleDB = async (uid, saleId) => {
   try {
     const database = await initDB();
@@ -736,5 +815,6 @@ export const deleteSaleDB = async (uid, saleId) => {
     throw error;
   }
 };
+
 
 

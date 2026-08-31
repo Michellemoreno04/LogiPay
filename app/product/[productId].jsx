@@ -83,6 +83,7 @@ export default function ProductDetailScreen() {
         clientName,
         quantity,
         unitPrice,
+        buyPrice: result.buyPrice,
         totalAmount: result.totalAmount,
         date: result.date,
         newStock: result.newStock,

@@ -2,7 +2,7 @@ export default {
   "expo": {
     "name": "LogiPay",
     "slug": "LogiPay",
-    "version": "1.2.1",
+    "version": "1.3.1",
     "orientation": "portrait",
     "icon": "./assets/images/ios-app-icon.png",
     "scheme": "logipay",
@@ -36,6 +36,19 @@ export default {
     "plugins": [
       "expo-sqlite",
       "expo-router",
+      "expo-audio",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permitir acceso a la cámara para escanear códigos de barra y tomar fotos."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permitir acceso a la galería para seleccionar fotos de productos."
+        }
+      ],
       [
         "expo-build-properties",
         {

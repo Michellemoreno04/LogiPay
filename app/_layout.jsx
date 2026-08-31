@@ -92,10 +92,12 @@ function RootLayoutNav() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="[id]" options={{ headerShown: false }} />
         <Stack.Screen name="add-user" options={{ title: "Nuevo Cliente", presentation: 'modal' }} />
-        <Stack.Screen name="all-transactions" options={{ title: "Todas las Transacciones", presentation: 'modal' }} />
+        <Stack.Screen name="all-transactions" options={{ headerShown: false }} />
         <Stack.Screen name="delete-account" options={{ title: "Eliminar Cuenta", presentation: 'modal' }} />
         <Stack.Screen name="edit-profile" options={{ headerShown: false }} />
         <Stack.Screen name="product/[productId]" options={{ headerShown: false }} />
+        <Stack.Screen name="add-product" options={{ headerShown: false }} />
+        <Stack.Screen name="quick-scan" options={{ headerShown: false }} />
 
       </Stack>
     </>
