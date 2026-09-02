@@ -1,11 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useAudioPlayer } from 'expo-audio';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Camera, useCameraDevice, useCameraPermission, useCodeScanner } from 'react-native-vision-camera';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,21 +19,41 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   Vibration,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../authContext/authContext';
 import { useLocalData } from '../context/LocalDataContext';
-import { recordSale } from '../utils/productService';
+import { addBarcodeToProduct, recordSale, recordSaleOrder } from '../utils/productService';
 
 export default function QuickScanScreen() {
   const insets = useSafeAreaInsets();
   const { user, userData, updateLocalUserData } = useAuth();
   const { products, clients, addSaleOptimistic, addTransactionOptimistic } = useLocalData();
 
-  const [permission, requestPermission] = useCameraPermissions();
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const device = useCameraDevice('back');
   const [torchOn, setTorchOn] = useState(false);
+  // Cámara desactivada por defecto — el usuario la activa manualmente
+  const [cameraActive, setCameraActive] = useState(false);
+  // Enfoque manual al tocar
+  const [focusPoint, setFocusPoint] = useState(null); // { x, y }
+  const focusAnim = useRef(new Animated.Value(0)).current;
+  // Estado OCR
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const cameraRef = useRef(null);
+
+  // Escaner de códigos nativo de VisionCamera v5
+  const codeScanner = useCodeScanner({
+    codeTypes: ['ean-13','ean-8','upc-a','upc-e','code-128','code-39','code-93','qr','pdf-417','aztec','data-matrix'],
+    onCodeScanned: (codes) => {
+      codes.forEach((code) => {
+        if (code.value) handleBarcodeScanned({ data: code.value });
+      });
+    },
+  });
 
   // Lista de productos escaneados [{ product, quantity }]
   const [scannedItems, setScannedItems] = useState([]);
@@ -49,6 +69,12 @@ export default function QuickScanScreen() {
   // Modal de agregar producto manual
   const [manualPickerVisible, setManualPickerVisible] = useState(false);
   const [manualSearchQuery, setManualSearchQuery] = useState('');
+
+  // Modal de vincular producto a código desconocido
+  const [linkModalVisible, setLinkModalVisible] = useState(false);
+  const [linkingBarcode, setLinkingBarcode] = useState(null); // { id, barcode }
+  const [linkSearchQuery, setLinkSearchQuery] = useState('');
+  const [linkingSaving, setLinkingSaving] = useState(false);
 
   // Modal de revisión de orden / Checkout
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
@@ -71,6 +97,27 @@ export default function QuickScanScreen() {
     loop.start();
     return () => loop.stop();
   }, []);
+
+  // Manejar toque en la cámara para enfocar (nativo real con VisionCamera)
+  const handleCameraTouch = useCallback(async (evt) => {
+    const { locationX, locationY } = evt.nativeEvent;
+    setFocusPoint({ x: locationX, y: locationY });
+
+    // Animar el indicador de enfoque
+    focusAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(focusAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.delay(600),
+      Animated.timing(focusAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start(() => setFocusPoint(null));
+
+    // Tap-to-focus real con VisionCamera
+    try {
+      await cameraRef.current?.focus({ x: locationX, y: locationY });
+    } catch (_) { /* Algunos dispositivos no soportan focus manual */ }
+
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch (_) {}
+  }, [focusAnim]);
 
   // Función para mostrar notificación emergente por 1 segundo
   const showToastNotification = (msg = 'Producto agregado') => {
@@ -118,8 +165,8 @@ export default function QuickScanScreen() {
     }
   };
 
-  // Manejador de escaneo continuo
-  const handleBarcodeScanned = ({ data }) => {
+  // Manejador de escaneo continuo — declarado antes del OCR handler para poder referenciarlo
+  const handleBarcodeScanned = useCallback(({ data }) => {
     const now = Date.now();
     // Evitar lecturas duplicadas en menos de 0.8s para el mismo código de barras en la cámara
     if (lastScanRef.current.code === data && now - lastScanRef.current.time < 800) {
@@ -128,8 +175,15 @@ export default function QuickScanScreen() {
     lastScanRef.current = { code: data, time: now };
 
     const cleanCode = String(data).trim();
+    // Buscar el producto por barcode principal O por el array de barcodes vinculados
     const matchedProduct = products.find(
-      (p) => p.barcode && String(p.barcode).trim() === cleanCode
+      (p) => {
+        if (p.barcode && String(p.barcode).trim() === cleanCode) return true;
+        try {
+          const extraBarcodes = JSON.parse(p.barcodes || '[]');
+          return Array.isArray(extraBarcodes) && extraBarcodes.includes(cleanCode);
+        } catch { return false; }
+      }
     );
 
     if (matchedProduct) {
@@ -156,7 +210,107 @@ export default function QuickScanScreen() {
         return [{ barcode: cleanCode, id: `unk_${now}` }, ...prev];
       });
     }
-  };
+  }, [products, playAddProductSound, showToastNotification]);
+
+  // ─── OCR: captura foto y extrae números con Google Cloud Vision ───
+  const handleOcrCapture = useCallback(async () => {
+    if (!cameraRef.current || ocrLoading) return;
+    setOcrLoading(true);
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      // VisionCamera v5: takePhoto() en lugar de takePictureAsync()
+      const photo = await cameraRef.current.takePhoto({
+        flash: 'off',
+      });
+
+      // Leer el archivo como base64
+      const base64 = await fetch(`file://${photo.path}`)
+        .then((r) => r.blob())
+        .then(
+          (blob) =>
+            new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result?.split(',')[1]);
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            })
+        );
+      const FIREBASE_API_KEY = process.env.EXPO_PUBLIC_FIREBASE_API_KEY;
+      const visionUrl = `https://vision.googleapis.com/v1/images:annotate?key=${FIREBASE_API_KEY}`;
+
+      const body = {
+        requests: [
+          {
+            image: { content: base64 },
+            features: [
+              { type: 'TEXT_DETECTION', maxResults: 10 },
+              { type: 'BARCODE_DETECTION', maxResults: 5 },
+            ],
+          },
+        ],
+      };
+
+      const res = await fetch(visionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      const json = await res.json();
+      const annotations = json?.responses?.[0];
+
+      // 1. Intentar primero con detección de barcode nativa de Vision API
+      const visionBarcodes = annotations?.barcodeAnnotations || [];
+      if (visionBarcodes.length > 0) {
+        visionBarcodes.forEach((bc) => {
+          if (bc.rawValue) handleBarcodeScanned({ data: bc.rawValue });
+        });
+        showToastNotification('✓ Código detectado por OCR');
+        return;
+      }
+
+      // 2. Fallback: extraer números de la detección de texto
+      const textAnnotations = annotations?.textAnnotations || [];
+      const fullText = textAnnotations?.[0]?.description || '';
+
+      // Buscar secuencias numéricas que parezcan códigos de barras (8-14 dígitos)
+      const numberMatches = fullText
+        .replace(/\s+/g, ' ')
+        .match(/\b\d{8,14}\b/g);
+
+      if (numberMatches && numberMatches.length > 0) {
+        let found = false;
+        for (const num of numberMatches) {
+          const cleanCode = num.trim();
+          const matchedProduct = products.find((p) => {
+            if (p.barcode && String(p.barcode).trim() === cleanCode) return true;
+            try {
+              const extraBarcodes = JSON.parse(p.barcodes || '[]');
+              return Array.isArray(extraBarcodes) && extraBarcodes.includes(cleanCode);
+            } catch { return false; }
+          });
+          if (matchedProduct) {
+            handleBarcodeScanned({ data: cleanCode });
+            showToastNotification('✓ Número leído por OCR');
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          const longestNum = numberMatches.sort((a, b) => b.length - a.length)[0];
+          handleBarcodeScanned({ data: longestNum });
+          showToastNotification(`OCR: ${longestNum}`);
+        }
+      } else {
+        showToastNotification('No se detectó ningún número');
+      }
+    } catch (e) {
+      console.warn('Error OCR:', e);
+      showToastNotification('Error al procesar la imagen');
+    } finally {
+      setOcrLoading(false);
+    }
+  }, [ocrLoading, products, handleBarcodeScanned, showToastNotification]);
 
   // Modificar cantidad
   const handleUpdateQuantity = (productId, delta) => {
@@ -192,8 +346,6 @@ export default function QuickScanScreen() {
     });
     playAddProductSound();
     showToastNotification(`${product.name} agregado`);
-    setManualPickerVisible(false);
-    setManualSearchQuery('');
   };
 
   // Productos filtrados para el picker manual
@@ -214,6 +366,54 @@ export default function QuickScanScreen() {
       pathname: '/add-product',
       params: { barcode },
     });
+  };
+
+  // Abrir modal de vinculación para un barcode desconocido
+  const handleLinkProduct = (unknownItem) => {
+    setLinkingBarcode(unknownItem);
+    setLinkSearchQuery('');
+    setLinkModalVisible(true);
+  };
+
+  // Productos filtrados para el picker de vinculación
+  const filteredLinkProducts = products.filter(
+    (p) =>
+      (p.name || '').toLowerCase().includes(linkSearchQuery.toLowerCase()) ||
+      (p.barcode || '').includes(linkSearchQuery)
+  );
+
+  // Vincular: agrega el barcode escaneado al array de barcodes del producto
+  // SIN reemplazar el barcode principal. Ambos códigos apuntan al mismo producto.
+  const handleConfirmLink = async (product) => {
+    if (!user || !linkingBarcode || linkingSaving) return;
+    setLinkingSaving(true);
+    try {
+      await addBarcodeToProduct({
+        uid: user.uid,
+        productId: product.id,
+        newBarcode: linkingBarcode.barcode,
+      });
+      // Remover el item desconocido y agregar el producto a la lista de venta
+      setUnknownBarcodes((prev) => prev.filter((item) => item.id !== linkingBarcode.id));
+      setScannedItems((prev) => {
+        const existing = prev.find((s) => s.product.id === product.id);
+        if (existing) {
+          return prev.map((s) =>
+            s.product.id === product.id ? { ...s, quantity: s.quantity + 1 } : s
+          );
+        }
+        return [...prev, { product, quantity: 1 }];
+      });
+      DeviceEventEmitter.emit('products-db-changed');
+      showToastNotification('Producto vinculado ✓');
+      setLinkModalVisible(false);
+      setLinkingBarcode(null);
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo vincular el producto. Intenta de nuevo.');
+      console.error(e);
+    } finally {
+      setLinkingSaving(false);
+    }
   };
 
   // Cálculos de resumen
@@ -238,47 +438,60 @@ export default function QuickScanScreen() {
       const targetClientId = selectedClient ? selectedClient.id : '';
       const targetClientName = selectedClient ? selectedClient.name : 'Venta al contado';
 
-      for (const item of scannedItems) {
-        const result = await recordSale({
-          uid: user.uid,
-          productId: item.product.id,
-          productName: item.product.name || '',
-          clientId: targetClientId,
-          clientName: targetClientName,
-          quantity: item.quantity,
-          unitPrice: item.product.price || 0,
-        });
+      const itemsToRecord = scannedItems.map((item) => ({
+        productId: item.product.id,
+        productName: item.product.name || '',
+        quantity: item.quantity,
+        unitPrice: item.product.price || 0,
+      }));
 
-        addSaleOptimistic({
-          saleId: result.saleId,
-          productId: item.product.id,
-          clientId: targetClientId,
-          clientName: targetClientName,
-          quantity: item.quantity,
-          unitPrice: item.product.price || 0,
-          buyPrice: result.buyPrice,
-          totalAmount: result.totalAmount,
-          date: result.date,
-          newStock: result.newStock,
-          productName: item.product.name || '',
-        });
+      const orderResult = await recordSaleOrder({
+        uid: user.uid,
+        clientId: targetClientId,
+        clientName: targetClientName,
+        items: itemsToRecord,
+      });
 
-        if (targetClientId && result.txId) {
-          addTransactionOptimistic({
-            txId: result.txId,
+      if (orderResult?.salesResults) {
+        for (const sRes of orderResult.salesResults) {
+          addSaleOptimistic({
+            saleId: sRes.saleId,
+            productId: sRes.productId,
             clientId: targetClientId,
             clientName: targetClientName,
-            type: 'debt',
-            amount: result.totalAmount,
-            title: `Compra (${item.quantity}x): ${item.product.name || 'Producto'}`,
-            description: `Compra (${item.quantity}x): ${item.product.name || 'Producto'}`,
+            quantity: sRes.quantity,
+            unitPrice: sRes.unitPrice,
+            buyPrice: sRes.buyPrice,
+            totalAmount: sRes.totalAmount,
+            date: sRes.date,
+            newStock: sRes.newStock,
+            productName: sRes.productName,
           });
+        }
+      }
 
-          if (updateLocalUserData) {
-            updateLocalUserData({
-              totalDebt: (userData?.totalDebt || 0) + result.totalAmount,
-            });
-          }
+      if (orderResult?.txId) {
+        const txTitle = `Factura de compra (${scannedItems.length} producto${scannedItems.length > 1 ? 's' : ''})`;
+        const txDescription = JSON.stringify({
+          isInvoice: true,
+          items: orderResult.items,
+          totalAmount: orderResult.totalOrderAmount,
+        });
+
+        addTransactionOptimistic({
+          txId: orderResult.txId,
+          clientId: targetClientId,
+          clientName: targetClientName,
+          type: targetClientId ? 'debt' : 'sale',
+          amount: orderResult.totalOrderAmount,
+          title: txTitle,
+          description: txDescription,
+        });
+
+        if (targetClientId && updateLocalUserData) {
+          updateLocalUserData({
+            totalDebt: (userData?.totalDebt || 0) + orderResult.totalOrderAmount,
+          });
         }
       }
 
@@ -332,29 +545,51 @@ export default function QuickScanScreen() {
 
       {/* ─── Scanner Area (Top) ─── */}
       <View style={styles.scannerViewport}>
-        {permission?.granted ? (
-          <CameraView
-            style={StyleSheet.absoluteFillObject}
-            facing="back"
-            enableTorch={torchOn}
-            onBarcodeScanned={handleBarcodeScanned}
-            barcodeScannerSettings={{
-              barcodeTypes: [
-                'ean13',
-                'ean8',
-                'upc_a',
-                'upc_e',
-                'code128',
-                'code39',
-                'code93',
-                'qr',
-                'pdf417',
-                'aztec',
-                'datamatrix',
-              ],
-            }}
-          />
-        ) : (
+        {!cameraActive ? (
+          /* ── Pantalla de inicio: la cámara NO está activa aún ── */
+          <View style={styles.cameraInactiveBox}>
+            {/* Botón manual - izquierda */}
+            <TouchableOpacity
+              style={styles.cameraInactiveManualBtn}
+              onPress={() => setManualPickerVisible(true)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="list" size={16} color="#fff" />
+              <Text style={styles.cameraInactiveManualBtnText}>Productos</Text>
+            </TouchableOpacity>
+
+            <View style={styles.cameraInactiveIconWrap}>
+              <Ionicons name="camera" size={36} color="#fff" />
+            </View>
+            <Text style={styles.cameraInactiveTitle}>Cámara desactivada</Text>
+            <Text style={styles.cameraInactiveSub}>
+              Presiona el botón para iniciar el escáner
+            </Text>
+            <TouchableOpacity
+              style={styles.cameraActivateBtn}
+              onPress={async () => {
+                if (!hasPermission) await requestPermission();
+                setCameraActive(true);
+              }}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={['#2D3A8C', '#1A1F4B']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.cameraActivateBtnGradient}
+              >
+                <Ionicons name="scan" size={20} color="#fff" />
+                <Text style={styles.cameraActivateBtnText}>Activar cámara</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        ) : !device ? (
+          <View style={styles.permissionBox}>
+            <Ionicons name="camera-outline" size={44} color="#6C6C70" />
+            <Text style={styles.permissionText}>No se encontró cámara trasera</Text>
+          </View>
+        ) : !hasPermission ? (
           <View style={styles.permissionBox}>
             <Ionicons name="camera-outline" size={44} color="#6C6C70" />
             <Text style={styles.permissionText}>Se requiere acceso a la cámara</Text>
@@ -362,52 +597,91 @@ export default function QuickScanScreen() {
               <Text style={styles.permissionBtnText}>Conceder Permiso</Text>
             </TouchableOpacity>
           </View>
+        ) : (
+          <TouchableWithoutFeedback onPress={handleCameraTouch}>
+            <View style={StyleSheet.absoluteFillObject}>
+              <Camera
+                ref={cameraRef}
+                style={StyleSheet.absoluteFillObject}
+                device={device}
+                isActive={cameraActive}
+                torch={torchOn ? 'on' : 'off'}
+                codeScanner={codeScanner}
+                enableZoomGesture
+              />
+              {/* Indicador visual de punto de enfoque */}
+              {focusPoint && (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.focusRing,
+                    {
+                      left: focusPoint.x - 35,
+                      top: focusPoint.y - 35,
+                      opacity: focusAnim,
+                      transform: [
+                        {
+                          scale: focusAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [1.4, 1],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                />
+              )}
+            </View>
+          </TouchableWithoutFeedback>
         )}
 
-        {/* Overlay del escáner */}
-        <View style={styles.scanOverlay}>
-          {/* Botón manual a la IZQUIERDA */}
-          <TouchableOpacity
-            style={styles.scannerManualBtn}
-            onPress={() => setManualPickerVisible(true)}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="list" size={16} color="#fff" />
-          </TouchableOpacity>
+        {/* Overlay del escáner (solo visible cuando la cámara está activa) */}
+        {cameraActive && (
+          <View style={styles.scanOverlay} pointerEvents="box-none">
+            {/* Botón manual a la IZQUIERDA */}
+            <TouchableOpacity
+              style={styles.scannerManualBtn}
+              onPress={() => setManualPickerVisible(true)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="list" size={16} color="#fff" />
+            </TouchableOpacity>
 
-          {/* Botón para encender/apagar el flash DENTRO del área de escaneo */}
-          <TouchableOpacity
-            style={[styles.scannerTorchBtn, torchOn && styles.scannerTorchBtnActive]}
-            onPress={() => setTorchOn(!torchOn)}
-            activeOpacity={0.75}
-          >
-            <Ionicons name={torchOn ? 'flash' : 'flash-outline'} size={16} color={torchOn ? '#FFD60A' : '#fff'} />
+            {/* Botón para encender/apagar el flash */}
+            <TouchableOpacity
+              style={[styles.scannerTorchBtn, torchOn && styles.scannerTorchBtnActive]}
+              onPress={() => setTorchOn(!torchOn)}
+              activeOpacity={0.75}
+            >
+              <Ionicons name={torchOn ? 'flash' : 'flash-outline'} size={16} color={torchOn ? '#FFD60A' : '#fff'} />
+            </TouchableOpacity>
 
-          </TouchableOpacity>
+            <View style={styles.scanFrame}>
+              <View style={[styles.corner, styles.cornerTL]} />
+              <View style={[styles.corner, styles.cornerTR]} />
+              <View style={[styles.corner, styles.cornerBL]} />
+              <View style={[styles.corner, styles.cornerBR]} />
+              <Animated.View
+                style={[
+                  styles.scanLine,
+                  {
+                    transform: [
+                      {
+                        translateY: scanLineAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 130],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+            </View>
 
-          <View style={styles.scanFrame}>
-            <View style={[styles.corner, styles.cornerTL]} />
-            <View style={[styles.corner, styles.cornerTR]} />
-            <View style={[styles.corner, styles.cornerBL]} />
-            <View style={[styles.corner, styles.cornerBR]} />
-            <Animated.View
-              style={[
-                styles.scanLine,
-                {
-                  transform: [
-                    {
-                      translateY: scanLineAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, 130],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            />
+            {/* Hint inferior */}
+            <Text style={styles.scanHintText}>Enfoca el código de barras continuamente</Text>
           </View>
-          <Text style={styles.scanHintText}>Enfoca los códigos de barras continuamente</Text>
-        </View>
+        )}
       </View>
 
       {/* ─── Scanned Items List (Middle) ─── */}
@@ -437,32 +711,41 @@ export default function QuickScanScreen() {
               // Render de producto NO encontrado con botón de agregar
               if (item._isUnknown) {
                 return (
-                  <View style={styles.unknownCard}>
-                    <View style={styles.unknownLeft}>
-                      <View style={styles.unknownIconBg}>
-                        <Ionicons name="alert-circle-outline" size={22} color="#FF9500" />
+                  <View>
+                    <View style={styles.unknownCard}>
+                      <View style={styles.unknownLeft}>
+                        <View style={styles.unknownIconBg}>
+                          <Ionicons name="alert-circle-outline" size={22} color="#FF9500" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.unknownTitle} numberOfLines={1}>
+                            Producto no encontrado
+                          </Text>
+                          <Text style={styles.unknownBarcode}>Código: {item.barcode}</Text>
+                        </View>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.unknownTitle} numberOfLines={1}>
-                          Producto no encontrado
-                        </Text>
-                        <Text style={styles.unknownBarcode}>Código: {item.barcode}</Text>
+                      <View style={styles.unknownRight}>
+                        <View style={{ flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                          <TouchableOpacity
+                            style={styles.addProductBtn}
+                            onPress={() => handleAddProduct(item.barcode)}
+                          >
+                            <Ionicons name="add" size={16} color="#fff" />
+                            <Text style={styles.addProductBtnText}>Agregar</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleLinkProduct(item)}
+                          >
+                            <Text style={{ color: '#007AFF', fontSize: 11, fontStyle: 'italic', textDecorationLine: 'underline', opacity: 0.85 }}>vincular a existente</Text>
+                          </TouchableOpacity>
+                        </View>
+                        <TouchableOpacity
+                          style={styles.closeUnknownBtn}
+                          onPress={() => handleRemoveUnknown(item.id)}
+                        >
+                          <Ionicons name="close" size={18} color="#8E8E93" />
+                        </TouchableOpacity>
                       </View>
-                    </View>
-                    <View style={styles.unknownRight}>
-                      <TouchableOpacity
-                        style={styles.addProductBtn}
-                        onPress={() => handleAddProduct(item.barcode)}
-                      >
-                        <Ionicons name="add" size={16} color="#fff" />
-                        <Text style={styles.addProductBtnText}>Agregar</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.closeUnknownBtn}
-                        onPress={() => handleRemoveUnknown(item.id)}
-                      >
-                        <Ionicons name="close" size={18} color="#8E8E93" />
-                      </TouchableOpacity>
                     </View>
                   </View>
                 );
@@ -588,6 +871,119 @@ export default function QuickScanScreen() {
         </Animated.View>
       )}
 
+      {/* ─── Link Product Modal ─── */}
+      <Modal
+        visible={linkModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => { setLinkModalVisible(false); setLinkingBarcode(null); setLinkSearchQuery(''); }}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.modalSheet}>
+            <LinearGradient
+              colors={['#1A3A4B', '#2D6A8C']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.modalHeader}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name="link" size={22} color="#fff" />
+                <View>
+                  <Text style={styles.modalHeaderTitle}>Vincular Producto</Text>
+                  {linkingBarcode && (
+                    <Text style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '600' }}>
+                      Código: {linkingBarcode.barcode}
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => { setLinkModalVisible(false); setLinkingBarcode(null); setLinkSearchQuery(''); }}
+                style={styles.modalCloseBtn}
+              >
+                <Ionicons name="close" size={20} color="#fff" />
+              </TouchableOpacity>
+            </LinearGradient>
+
+            <View style={styles.modalBody}>
+              <View style={styles.linkInfoBanner}>
+                <Ionicons name="information-circle-outline" size={18} color="#2D6A8C" />
+                <Text style={styles.linkInfoText}>
+                  El código escaneado se agregará como código adicional del producto. El código original no será reemplazado.
+                </Text>
+              </View>
+
+              <View style={styles.manualSearchWrapper}>
+                <Ionicons name="search" size={18} color="#8E8E93" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar producto por nombre..."
+                  placeholderTextColor="#C0C0C8"
+                  value={linkSearchQuery}
+                  onChangeText={setLinkSearchQuery}
+                  autoFocus
+                />
+                {linkSearchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setLinkSearchQuery('')}>
+                    <Ionicons name="close-circle" size={18} color="#C0C0C8" />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <FlatList
+                data={filteredLinkProducts}
+                keyExtractor={(item) => item.id}
+                style={{ maxHeight: 360 }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 8 }}
+                ListEmptyComponent={
+                  <View style={styles.emptyState}>
+                    <Ionicons name="cube-outline" size={40} color="#C0C0C8" />
+                    <Text style={styles.emptyStateTitle}>Sin productos</Text>
+                    <Text style={styles.emptyStateSub}>No se encontraron productos con ese nombre.</Text>
+                  </View>
+                }
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.manualProductRow}
+                    onPress={() => handleConfirmLink(item)}
+                    activeOpacity={0.75}
+                    disabled={linkingSaving}
+                  >
+                    <View style={[styles.manualProductAvatar, { backgroundColor: '#E8F4FB' }]}>
+                      <Ionicons name="cube" size={20} color="#2D6A8C" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.manualProductName} numberOfLines={1}>{item.name}</Text>
+                      <Text style={styles.manualProductPrice}>${parseFloat(item.price || 0).toFixed(2)} c/u</Text>
+                      {item.barcode ? (
+                        <Text style={styles.manualProductBarcode}>Cód. principal: #{item.barcode}</Text>
+                      ) : (
+                        <Text style={[styles.manualProductBarcode, { color: '#B0B0C8' }]}>Sin código principal</Text>
+                      )}
+                    </View>
+                    <View style={[styles.manualAddBtn, { backgroundColor: '#2D6A8C' }]}>
+                      {linkingSaving ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <>
+                          <Ionicons name="link" size={16} color="#fff" />
+                          <Text style={styles.manualAddBtnText}>Vincular</Text>
+                        </>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* ─── Manual Product Picker Modal ─── */}
       <Modal
         visible={manualPickerVisible}
@@ -685,6 +1081,15 @@ export default function QuickScanScreen() {
                   );
                 }}
               />
+
+              {/* Botón Listo para cerrar cuando el usuario termine */}
+              <TouchableOpacity
+                style={styles.doneModalBtn}
+                onPress={() => { setManualPickerVisible(false); setManualSearchQuery(''); }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.doneModalBtnText}>Listo</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
@@ -796,8 +1201,10 @@ export default function QuickScanScreen() {
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
                     <>
-                      <Ionicons name="checkmark-circle" size={22} color="#fff" />
-                      <Text style={styles.confirmBtnText}>Confirmar y Registrar Venta</Text>
+                      <Ionicons name={selectedClient ? "person-add" : "checkmark-circle"} size={22} color="#fff" />
+                      <Text style={styles.confirmBtnText}>
+                        {selectedClient ? 'Agregar Deuda' : 'Confirmar y Registrar Venta'}
+                      </Text>
                     </>
                   )}
                 </LinearGradient>
@@ -1016,6 +1423,83 @@ const styles = StyleSheet.create({
   },
   permissionBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
+  // Camera inactive / activate button
+  cameraInactiveBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0D0D1A',
+    gap: 10,
+  },
+  cameraInactiveManualBtn: {
+    position: 'absolute',
+    top: 12,
+    left: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(44,58,140,0.75)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    zIndex: 10,
+  },
+  cameraInactiveManualBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  cameraInactiveIconWrap: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: 'rgba(45,58,140,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.2)',
+    marginBottom: 4,
+  },
+  cameraInactiveTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: -0.3,
+  },
+  cameraInactiveSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+    textAlign: 'center',
+    paddingHorizontal: 32,
+    marginBottom: 6,
+  },
+  cameraActivateBtn: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    marginTop: 4,
+    shadowColor: '#2D3A8C',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  cameraActivateBtnGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 11,
+  },
+  cameraActivateBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 14,
+    letterSpacing: -0.2,
+  },
+
+
   scanOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
@@ -1052,6 +1536,18 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.8)',
     fontWeight: '600',
     marginTop: 10,
+  },
+  focusRing: {
+    position: 'absolute',
+    width: 70,
+    height: 70,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#FFD60A',
+    shadowColor: '#FFD60A',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
   },
 
   // List Section
@@ -1159,6 +1655,28 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   addProductBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  linkProductBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2D6A8C',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 10,
+    gap: 4,
+  },
+  linkProductBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  linkInfoBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#E8F4FB',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#B8D8E8',
+  },
+  linkInfoText: { flex: 1, fontSize: 12, color: '#2D6A8C', fontWeight: '500', lineHeight: 17 },
   closeUnknownBtn: { padding: 4 },
 
   // Bottom Summary Bar
@@ -1385,4 +1903,17 @@ const styles = StyleSheet.create({
   clientAvatarText: { fontSize: 16, fontWeight: '800', color: '#4C669F' },
   clientName: { fontSize: 15, fontWeight: '700', color: '#1A1F4B' },
   clientPhone: { fontSize: 12, color: '#8E8E93' },
+  doneModalBtn: {
+    marginTop: 10,
+    backgroundColor: '#1A1F4B',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doneModalBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
 });

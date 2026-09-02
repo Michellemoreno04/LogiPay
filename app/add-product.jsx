@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { Camera, useCameraDevice, useCameraPermission, useCodeScanner } from 'react-native-vision-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -66,7 +66,17 @@ export default function AddProductScreen() {
   const [scanned, setScanned] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
-  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const device = useCameraDevice('back');
+
+  const codeScanner = useCodeScanner({
+    codeTypes: ['ean-13','ean-8','upc-a','upc-e','code-128','code-39','code-93','qr','pdf-417','aztec','data-matrix'],
+    onCodeScanned: (codes) => {
+      if (scanned) return;
+      const first = codes[0];
+      if (first?.value) handleBarCodeScanned({ data: first.value });
+    },
+  });
 
   const scanLineAnim = useRef(new Animated.Value(0)).current;
   const headerScale = useRef(new Animated.Value(0.97)).current;
@@ -114,8 +124,8 @@ export default function AddProductScreen() {
   };
 
   const openScanner = async () => {
-    if (!cameraPermission?.granted) {
-      const { granted } = await requestCameraPermission();
+    if (!hasPermission) {
+      const granted = await requestPermission();
       if (!granted) { Alert.alert('Permiso denegado', 'Necesitamos acceso a tu cámara para escanear.'); return; }
     }
     setTorchOn(false);
@@ -389,15 +399,19 @@ export default function AddProductScreen() {
       {/* Barcode Scanner Modal */}
       <Modal visible={scannerVisible} animationType="slide" onRequestClose={() => { setScannerVisible(false); setTorchOn(false); }}>
         <View style={styles.scannerContainer}>
-          <CameraView
-            style={StyleSheet.absoluteFillObject}
-            facing="back"
-            enableTorch={torchOn}
-            onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
-            barcodeScannerSettings={{
-              barcodeTypes: ['ean13','ean8','upc_a','upc_e','code128','code39','code93','qr','pdf417','aztec','datamatrix'],
-            }}
-          />
+          {device ? (
+            <Camera
+              style={StyleSheet.absoluteFillObject}
+              device={device}
+              isActive={scannerVisible}
+              torch={torchOn ? 'on' : 'off'}
+              codeScanner={codeScanner}
+            />
+          ) : (
+            <View style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }]}>
+              <Text style={{ color: '#fff' }}>No se encontró cámara</Text>
+            </View>
+          )}
           <View style={styles.scannerOverlay}>
             <View style={styles.scanOverlayTop}>
               <TouchableOpacity

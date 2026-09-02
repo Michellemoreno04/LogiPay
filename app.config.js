@@ -14,7 +14,9 @@ export default {
       "usesAppleSignIn": true,
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Permitir acceso a la cámara para escanear códigos de barra y tomar fotos.",
+        "NSMicrophoneUsageDescription": "Acceso al micrófono requerido por la cámara."
       }
     },
     "android": {
@@ -27,7 +29,10 @@ export default {
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.logipay.app"
+      "package": "com.logipay.app",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "output": "static",
@@ -38,9 +43,9 @@ export default {
       "expo-router",
       "expo-audio",
       [
-        "expo-camera",
+        "react-native-vision-camera",
         {
-          "cameraPermission": "Permitir acceso a la cámara para escanear códigos de barra y tomar fotos."
+          "cameraPermissionText": "Permitir acceso a la cámara para escanear códigos de barra y tomar fotos."
         }
       ],
       [

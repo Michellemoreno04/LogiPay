@@ -53,6 +53,47 @@ export default function ProfileScreen() {
             <Text style={styles.businessName}>{userData.businessName}</Text>
           )}
           <Text style={styles.userEmail}>{user?.email || 'email@ejemplo.com'}</Text>
+
+          {userData && (
+            <View style={styles.businessCard}>
+              <Text style={styles.businessCardTitle}>Información de tu Negocio</Text>
+
+              <View style={styles.businessInfoRow}>
+                <Ionicons
+                  name={userData.businessType === 'organization' ? 'business-outline' : 'storefront-outline'}
+                  size={16}
+                  color="#4C669F"
+                  style={styles.businessInfoIcon}
+                />
+                <Text style={styles.businessInfoText}>
+                  Tipo: {userData.businessType === 'organization' ? 'Organización / Club' : 'Negocio Comercial'}
+                </Text>
+              </View>
+
+              {userData.businessAddress ? (
+                <View style={styles.businessInfoRow}>
+                  <Ionicons name="location-outline" size={16} color="#4C669F" style={styles.businessInfoIcon} />
+                  <Text style={styles.businessInfoText}>{userData.businessAddress}</Text>
+                </View>
+              ) : null}
+
+              {userData.businessPhone ? (
+                <View style={styles.businessInfoRow}>
+                  <Ionicons name="call-outline" size={16} color="#4C669F" style={styles.businessInfoIcon} />
+                  <Text style={styles.businessInfoText}>{userData.businessPhone}</Text>
+                </View>
+              ) : null}
+
+              {userData.businessRnc ? (
+                <View style={styles.businessInfoRow}>
+                  <Ionicons name="card-outline" size={16} color="#4C669F" style={styles.businessInfoIcon} />
+                  <Text style={styles.businessInfoText}>RNC: {userData.businessRnc}</Text>
+                </View>
+              ) : null}
+
+
+            </View>
+          )}
         </View>
 
         <View style={styles.menu}>
@@ -126,6 +167,47 @@ const styles = StyleSheet.create({
   userName: { fontSize: 24, fontWeight: 'bold', color: '#1C1C1E' },
   businessName: { fontSize: 18, color: '#4C669F', marginTop: 4, fontWeight: '600' },
   userEmail: { fontSize: 16, color: '#8E8E93', marginTop: 2 },
+  businessCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 20,
+    width: '90%',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  businessCardTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  businessInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  businessInfoIcon: {
+    marginRight: 10,
+    width: 20,
+    textAlign: 'center',
+  },
+  businessInfoText: {
+    fontSize: 14,
+    color: '#1E293B',
+    flex: 1,
+  },
+  invoiceFooterText: {
+    fontStyle: 'italic',
+    color: '#64748B',
+  },
   menu: { marginTop: 20 },
   menuTitle: { fontSize: 13, fontWeight: '600', color: '#8E8E93', marginLeft: 16, marginVertical: 8, textTransform: 'uppercase' },
   menuItem: {

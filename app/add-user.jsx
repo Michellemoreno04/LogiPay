@@ -81,9 +81,9 @@ export default function AddUserScreen() {
 
       // Actualizar totales locales del usuario en memoria
       if (parsedBalance > 0 && updateLocalUserData) {
-        const totalField = transactionType === 'payment' ? 'totalPayment' : 'totalDebt';
+        const debtChange = transactionType === 'payment' ? -parsedBalance : parsedBalance;
         updateLocalUserData({
-          [totalField]: (userData?.[totalField] || 0) + parsedBalance,
+          totalDebt: (userData?.totalDebt || 0) + debtChange,
         });
       }
 

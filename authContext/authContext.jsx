@@ -1,9 +1,9 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getAuth, onAuthStateChanged, signOut } from '@react-native-firebase/auth';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { db } from '../firebaseConfig/config';
 import { useRouter } from 'expo-router';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
+import { db } from '../firebaseConfig/config';
 import { getUserData, saveUserData } from '../utils/database';
 
 const AuthContext = createContext({});

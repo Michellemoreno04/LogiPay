@@ -2,122 +2,164 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useAuth } from '../authContext/authContext';
 
 const formatCurrency = (amount) =>
-  new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+  new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount || 0);
 
 const formatDate = (dateValue) => {
   if (!dateValue) return '';
-  const date = new Date(dateValue);
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
   if (isNaN(date.getTime())) return String(dateValue);
-  return date.toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+  return date.toLocaleDateString('es-ES', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
 };
 
 /**
- * Componente visual de tarjeta para compartir una transacción.
- * Se renderiza en un View oculto y se captura con react-native-view-shot.
+ * Componente visual de tarjeta/factura para compartir una transacción.
+ * Incluye la información del negocio ingresada por el usuario en business-type.jsx.
  *
  * Props:
  *   - transaction: objeto de transacción
- *   - clientName: string con el nombre del cliente
+ *   - clientName: string con el nombre del cliente (opcional)
  *   - innerRef: ref que apunta al View raíz (para capturar con viewShot)
  */
 export default function ShareTransactionCard({ transaction, clientName, innerRef }) {
+  const auth = useAuth();
+  const userData = auth?.userData;
+
   if (!transaction) return null;
 
   const isPayment = transaction.type === 'payment';
-  const gradientColors = isPayment
-    ? ['#1a6b3a', '#28a058', '#34C759']
-    : ['#8B0000', '#c0392b', '#FF3B30'];
+  const isSale = transaction.type === 'sale';
 
-  const accentColor = isPayment ? '#34C759' : '#FF3B30';
-  const amountSign = isPayment ? '+' : '-';
-  const typeLabel = isPayment ? 'PAGO RECIBIDO' : 'DEUDA REGISTRADA';
-  const typeIcon = isPayment ? 'arrow-down-circle' : 'arrow-up-circle';
+  // Extraer items de factura si están presentes
+  let invoiceItems = null;
+  const rawDesc = transaction.rawDescription || transaction.description;
+  if (rawDesc) {
+    try {
+      const parsed = JSON.parse(rawDesc);
+      if (parsed && Array.isArray(parsed.items) && parsed.items.length > 0) {
+        invoiceItems = parsed.items;
+      }
+    } catch (e) { }
+  }
+  if (!invoiceItems && Array.isArray(transaction.items) && transaction.items.length > 0) {
+    invoiceItems = transaction.items;
+  }
 
-  const dateStr = transaction.date || formatDate(transaction.createdAt) || '';
+  const headerTitle = transaction.title || (
+    invoiceItems
+      ? 'Factura de Venta'
+      : isSale
+        ? 'Orden de Venta'
+        : isPayment
+          ? 'Comprobante de Pago'
+          : 'Comprobante de Transacción'
+  );
+
+  const dateStr = formatDate(transaction.createdAt || transaction._date || transaction.date);
 
   return (
     <View ref={innerRef} style={styles.wrapper} collapsable={false}>
-      {/* Fondo con gradiente */}
-      <LinearGradient
-        colors={gradientColors}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.card}
-      >
-        {/* Círculos decorativos de fondo */}
-        <View style={[styles.circle, styles.circleBig]} />
-        <View style={[styles.circle, styles.circleSmall]} />
+      <View style={styles.cardSheet}>
+        {/* Header en azul claro con fecha y hora debajo del título */}
+        <LinearGradient
+          colors={['#EBF3FF', '#DCEBFF']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.modalHeader}
+        >
+          <View style={styles.headerLeftContainer}>
+            <Ionicons
+              name={isSale || invoiceItems ? 'cart' : isPayment ? 'checkmark-circle' : 'receipt'}
+              size={24}
+              color="#4C669F"
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalHeaderTitle} numberOfLines={1}>
+                {headerTitle}
+              </Text>
 
-        {/* Header: badge de tipo */}
-        <View style={styles.header}>
-          <View style={styles.typeBadge}>
-            <Ionicons name={typeIcon} size={14} color={accentColor} />
-            <Text style={[styles.typeLabel, { color: accentColor }]}>{typeLabel}</Text>
+            </View>
           </View>
-          <Text style={styles.appName}>LogiPay</Text>
+          <View style={styles.badgeContainer}>
+            <Text style={styles.badgeText}>LogiPay</Text>
+          </View>
+        </LinearGradient>
+        <View style={{ paddingHorizontal: 20, paddingTop: 8, alignItems: 'flex-end' }}>
+          {dateStr ? (
+            <Text style={[styles.modalHeaderSubtitle, { textAlign: 'right' }]}>{dateStr}</Text>
+          ) : null}
         </View>
 
-        {/* Monto principal */}
-        <View style={styles.amountSection}>
-          <Text style={styles.currencySymbol}>$</Text>
-          <Text style={styles.amountValue}>
-            {amountSign}{formatCurrency(transaction.amount)}
-          </Text>
-        </View>
+        <View style={styles.modalBody}>
+          {/* Información del Negocio (sin fondo blanco, N/A si no existe dato) */}
+          <View style={styles.businessHeaderBox}>
+            <Text style={styles.businessNameText}>{userData?.businessName || 'N/A'}</Text>
+            <Text style={styles.businessInfoText}>RNC / ID: {userData?.businessRnc || 'N/A'}</Text>
+            <Text style={styles.businessInfoText}>Dirección: {userData?.businessAddress || 'N/A'}</Text>
+            <Text style={styles.businessInfoText}>Teléfono: {userData?.businessPhone || 'N/A'}</Text>
+          </View>
 
-        {/* Divider */}
-        <View style={styles.divider} />
+          {/* Desglose del pedido / factura */}
+          <Text style={styles.fieldLabel}>Desglose de la factura</Text>
+          <View style={styles.orderSummaryBox}>
+            {invoiceItems && invoiceItems.length > 0 ? (
+              invoiceItems.map((item, index) => {
+                const qty = item.quantity || 1;
+                const name = item.productName || item.name || 'Producto';
+                const unitPrice = parseFloat(item.unitPrice || item.price || 0);
+                const total = item.totalAmount !== undefined ? item.totalAmount : qty * unitPrice;
+                return (
+                  <View key={index} style={styles.orderSummaryRow}>
+                    <Text style={styles.orderItemName} numberOfLines={1}>
+                      {qty}x {name}
+                    </Text>
+                    <Text style={styles.orderItemSubtotal}>
+                      ${formatCurrency(total)}
+                    </Text>
+                  </View>
+                );
+              })
+            ) : (
+              <View style={styles.orderSummaryRow}>
+                <Text style={styles.orderItemName} numberOfLines={2}>
+                  {transaction.title || transaction.description || 'Concepto general'}
+                </Text>
+                <Text style={styles.orderItemSubtotal}>
+                  ${formatCurrency(transaction.amount)}
+                </Text>
+              </View>
+            )}
 
-        {/* Info de la transacción */}
-        <View style={styles.infoSection}>
-          <View style={styles.infoRow}>
-            <Ionicons name="document-text-outline" size={16} color="rgba(255,255,255,0.7)" />
-            <View style={styles.infoTextCol}>
-              <Text style={styles.infoLabel}>Concepto</Text>
-              <Text style={styles.infoValue} numberOfLines={2}>
-                {transaction.title || transaction.description || '—'}
+            <View style={styles.orderSummaryDivider} />
+
+            <View style={styles.orderSummaryTotalRow}>
+              <Text style={styles.orderTotalLabel}>Monto total</Text>
+              <Text style={styles.orderTotalValue}>
+                ${formatCurrency(transaction.amount)}
               </Text>
             </View>
           </View>
 
-          {transaction.description && transaction.description !== transaction.title && (
-            <View style={styles.infoRow}>
-              <Ionicons name="chatbubble-outline" size={16} color="rgba(255,255,255,0.7)" />
-              <View style={styles.infoTextCol}>
-                <Text style={styles.infoLabel}>Nota</Text>
-                <Text style={styles.infoValue} numberOfLines={2}>{transaction.description}</Text>
-              </View>
-            </View>
-          )}
-
-          <View style={styles.infoRow}>
-            <Ionicons name="person-circle-outline" size={16} color="rgba(255,255,255,0.7)" />
-            <View style={styles.infoTextCol}>
-              <Text style={styles.infoLabel}>Cliente</Text>
-              <Text style={styles.infoValue}>{clientName || '—'}</Text>
-            </View>
+          {/* Pie de comprobante */}
+          <View style={styles.footerRow}>
+            {userData?.invoiceFooter ? (
+              <Text style={styles.invoiceFooterMessage}>{userData.invoiceFooter}</Text>
+            ) : (
+              <View />
+            )}
+            <Text style={styles.footerRightText}>Comprobante oficial LogiPay</Text>
           </View>
-
-          {dateStr ? (
-            <View style={styles.infoRow}>
-              <Ionicons name="calendar-outline" size={16} color="rgba(255,255,255,0.7)" />
-              <View style={styles.infoTextCol}>
-                <Text style={styles.infoLabel}>Fecha</Text>
-                <Text style={styles.infoValue}>{dateStr}</Text>
-              </View>
-            </View>
-          ) : null}
         </View>
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          <View style={styles.footerDot} />
-          <Text style={styles.footerText}>Comprobante generado con LogiPay</Text>
-          <View style={styles.footerDot} />
-        </View>
-      </LinearGradient>
+      </View>
     </View>
   );
 }
@@ -127,126 +169,151 @@ const styles = StyleSheet.create({
     width: 360,
     backgroundColor: 'transparent',
   },
-  card: {
+  cardSheet: {
+    backgroundColor: '#F5F7FF',
     borderRadius: 24,
-    padding: 28,
+    borderWidth: 1.5,
+    borderColor: '#E0E4F5',
     overflow: 'hidden',
-    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  // Decorativos
-  circle: {
-    position: 'absolute',
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-  },
-  circleBig: {
-    width: 220,
-    height: 220,
-    top: -60,
-    right: -60,
-  },
-  circleSmall: {
-    width: 120,
-    height: 120,
-    bottom: -30,
-    left: -30,
-  },
-  // Header
-  header: {
+  modalHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#D6E4FF',
   },
-  typeBadge: {
+  headerLeftContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-    borderRadius: 20,
-    gap: 6,
+    gap: 10,
+    flex: 1,
+    marginRight: 10,
   },
-  typeLabel: {
-    fontSize: 11,
+  modalHeaderTitle: {
+    fontSize: 17,
     fontWeight: '800',
-    letterSpacing: 1,
+    color: '#1A1F4B',
   },
-  appName: {
-    fontSize: 16,
+  modalHeaderSubtitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#4C669F',
+    marginTop: 2,
+  },
+  badgeContainer: {
+    backgroundColor: '#4C669F',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 12,
     fontWeight: '900',
-    color: 'rgba(255,255,255,0.9)',
     letterSpacing: 0.5,
   },
-  // Monto
-  amountSection: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 24,
+  modalBody: {
+    padding: 20,
   },
-  currencySymbol: {
-    fontSize: 28,
+  businessHeaderBox: {
+    paddingHorizontal: 2,
+    marginBottom: 16,
+  },
+  businessNameText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1A1F4B',
+    marginBottom: 4,
+  },
+  businessInfoText: {
+    fontSize: 12,
+    color: '#6068A0',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  fieldLabel: {
+    fontSize: 12,
     fontWeight: '700',
-    color: 'white',
-    marginTop: 8,
-    marginRight: 4,
-  },
-  amountValue: {
-    fontSize: 56,
-    fontWeight: '900',
-    color: 'white',
-    lineHeight: 60,
-    letterSpacing: -1,
-  },
-  // Divider
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    marginBottom: 20,
-  },
-  // Info rows
-  infoSection: {
-    gap: 14,
-    marginBottom: 24,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  infoTextCol: {
-    flex: 1,
-  },
-  infoLabel: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.6)',
-    fontWeight: '600',
+    color: '#6068A0',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 2,
+    marginBottom: 8,
   },
-  infoValue: {
-    fontSize: 15,
-    color: 'white',
-    fontWeight: '600',
+  orderSummaryBox: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: '#E0E4F5',
+    marginBottom: 14,
   },
-  // Footer
-  footer: {
+  orderSummaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  orderItemName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A1F4B',
+    flex: 1,
+    marginRight: 10,
+  },
+  orderItemSubtotal: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#4C669F',
+  },
+  orderSummaryDivider: {
+    height: 1,
+    backgroundColor: '#F0F2F8',
+    marginVertical: 8,
+  },
+  orderSummaryTotalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingTop: 4,
   },
-  footerDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.4)',
+  orderTotalLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1A1F4B',
   },
-  footerText: {
+  orderTotalValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#2D8C5A',
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  invoiceFooterMessage: {
     fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
-    fontWeight: '500',
+    fontStyle: 'italic',
+    color: '#6068A0',
+    flex: 1,
+    marginRight: 8,
+  },
+  footerRightText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#6068A0',
   },
 });
+
+
+
+

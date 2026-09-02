@@ -125,6 +125,7 @@ export default function EditProfileScreen() {
             value={businessAddress}
             onChangeText={setBusinessAddress}
             placeholder="Ej. Av. 27 de Febrero #123"
+            placeholderTextColor="#9CA3AF"
           />
         </View>
 
@@ -134,7 +135,8 @@ export default function EditProfileScreen() {
             style={styles.input}
             value={businessPhone}
             onChangeText={setBusinessPhone}
-            placeholder="Ej. (809) 555-0199"
+            placeholder="Ej. (809) 123-4567"
+            placeholderTextColor="#9CA3AF"
             keyboardType="phone-pad"
           />
         </View>
@@ -146,6 +148,7 @@ export default function EditProfileScreen() {
             value={businessRnc}
             onChangeText={setBusinessRnc}
             placeholder="Ej. 130-12345-6"
+            placeholderTextColor="#9CA3AF"
           />
         </View>
 

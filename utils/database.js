@@ -87,6 +87,7 @@ export const initDB = async () => {
           description TEXT DEFAULT '',
           stock REAL DEFAULT -1,
           barcode TEXT DEFAULT '',
+          barcodes TEXT DEFAULT '[]',
           buyPrice REAL DEFAULT 0,
           category TEXT DEFAULT '',
           photoUri TEXT DEFAULT '',
@@ -145,6 +146,11 @@ export const initDB = async () => {
         if (!hasProductPhotoUri) {
           await database.execAsync("ALTER TABLE products ADD COLUMN photoUri TEXT DEFAULT ''");
           console.log("[Migration] Added 'photoUri' column to products table.");
+        }
+        const hasProductBarcodes = productsInfo.some(col => col.name === 'barcodes');
+        if (!hasProductBarcodes) {
+          await database.execAsync("ALTER TABLE products ADD COLUMN barcodes TEXT DEFAULT '[]'");
+          console.log("[Migration] Added 'barcodes' column to products table.");
         }
 
         // Migración para 'transactions'
@@ -409,40 +415,23 @@ export const getRecentActivity = async (uid, limit = 8) => {
   try {
     const database = await initDB();
     const rows = await database.getAllAsync(
-      `SELECT * FROM (
-         SELECT
-           t.id,
-           t.type,
-           t.amount,
-           c.name   AS clientName,
-           t.clientId,
-           t.title  AS description,
-           t.createdAt,
-           'transaction' AS _source,
-           NULL     AS productName
-         FROM transactions t
-         LEFT JOIN clients c ON t.clientId = c.id
-         WHERE t.uid = ?
-
-         UNION ALL
-
-         SELECT
-           s.id,
-           'sale'        AS type,
-           s.totalAmount AS amount,
-           s.clientName,
-           s.clientId,
-           p.name        AS description,
-           s.createdAt,
-           'sale'        AS _source,
-           p.name        AS productName
-         FROM sales s
-         LEFT JOIN products p ON s.productId = p.id
-         WHERE s.uid = ?
-       )
-       ORDER BY createdAt DESC
+      `SELECT
+         t.id,
+         t.type,
+         t.amount,
+         COALESCE(c.name, 'Venta al contado') AS clientName,
+         t.clientId,
+         t.title  AS description,
+         t.createdAt,
+         'transaction' AS _source,
+         NULL     AS productName,
+         t.description AS rawDescription
+       FROM transactions t
+       LEFT JOIN clients c ON t.clientId = c.id
+       WHERE t.uid = ?
+       ORDER BY t.createdAt DESC
        LIMIT ?`,
-      [uid, uid, limit]
+      [uid, limit]
     );
     return rows;
   } catch (error) {
@@ -650,9 +639,13 @@ export const migrateFromLegacyCache = async (uid) => {
 export const insertProduct = async (uid, product) => {
   try {
     const database = await initDB();
+    // Normalizar barcodes: asegurarse que sea un JSON array serializado
+    const barcodesJson = Array.isArray(product.barcodes)
+      ? JSON.stringify(product.barcodes)
+      : (product.barcodes && typeof product.barcodes === 'string' ? product.barcodes : '[]');
     await database.runAsync(
-      `INSERT OR REPLACE INTO products (id, uid, name, price, description, stock, barcode, buyPrice, category, photoUri, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO products (id, uid, name, price, description, stock, barcode, barcodes, buyPrice, category, photoUri, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         product.id,
         uid,
@@ -661,6 +654,7 @@ export const insertProduct = async (uid, product) => {
         product.description || '',
         product.stock ?? -1,
         product.barcode || '',
+        barcodesJson,
         parseFloat(product.buyPrice) || 0,
         product.category || '',
         product.photoUri || '',

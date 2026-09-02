@@ -49,18 +49,32 @@ const formatCurrency = (amount) =>
   new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
 
 
-// ─── Componente principal ────────────────────────────────────────────────────
-
 export default function UserDetailsScreen() {
   const { id } = useLocalSearchParams();
   const { user, userData, updateLocalUserData } = useAuth();
-  const { addTransactionOptimistic, editTransactionOptimistic, deleteTransactionOptimistic, deleteClientOptimistic } = useLocalData();
+  const { clients: contextClients, addTransactionOptimistic, editTransactionOptimistic, deleteTransactionOptimistic, deleteClientOptimistic } = useLocalData();
   const { showAlert } = useAlert();
 
   // ─── Estado del cliente y transacciones ─────────────────────────────────
   const [client, setClient] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loadingClient, setLoadingClient] = useState(true);
+
+  // Recargar datos locales del cliente desde SQLite
+  const reloadClientFromDb = useCallback(async () => {
+    if (!user || !id) return;
+    const localClient = await getClientById(user.uid, id);
+    if (localClient) setClient(localClient);
+  }, [user, id]);
+
+  // Sincronizar client desde contextClients si cambia en memoria
+  useEffect(() => {
+    if (!id || !contextClients || contextClients.length === 0) return;
+    const found = contextClients.find((c) => c.id === id);
+    if (found) {
+      setClient((prev) => (prev ? { ...prev, ...found } : found));
+    }
+  }, [contextClients, id]);
 
   // ─── Estado del modal de transacción ─────────────────────────────────────
   const [modalVisible, setModalVisible] = useState(false);
@@ -204,15 +218,20 @@ export default function UserDetailsScreen() {
 
     loadTransactions();
 
-    // Escuchar cambios locales para refrescar
-    const sub = DeviceEventEmitter.addListener('local-db-changed', loadTransactions);
+    const handleLocalDbChanged = () => {
+      reloadClientFromDb();
+      loadTransactions();
+    };
+
+    // Escuchar cambios locales para refrescar cliente y transacciones
+    const sub = DeviceEventEmitter.addListener('local-db-changed', handleLocalDbChanged);
 
     return () => {
       isMounted = false;
       if (unsubscribe) unsubscribe();
       sub.remove();
     };
-  }, [user, id]);
+  }, [user, id, reloadClientFromDb]);
 
 
   // ─── Abrir modal (nueva transacción) ─────────────────────────────────────
@@ -300,7 +319,7 @@ export default function UserDetailsScreen() {
   /** Lógica interna: agregar nueva transacción. */
   const _addTransaction = async (parsedAmount) => {
     // El servicio encola en outbox y actualiza la caché SQLite
-    const { txId, balanceChange, totalField, newTx } = await addTransaction({
+    const { txId, balanceChange, newTx } = await addTransaction({
       uid: user.uid,
       clientId: id,
       type: transactionType,
@@ -315,7 +334,8 @@ export default function UserDetailsScreen() {
 
     // Actualizar totales locales en memoria
     if (updateLocalUserData) {
-      updateLocalUserData({ [totalField]: (userData?.[totalField] || 0) + parsedAmount });
+      const debtChange = transactionType === 'payment' ? -parsedAmount : parsedAmount;
+      updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) + debtChange });
     }
 
     // Reflejar en contexto global
@@ -338,7 +358,7 @@ export default function UserDetailsScreen() {
     if (!oldTx) throw new Error('Transacción no encontrada');
 
     // El servicio encola en outbox y actualiza la caché SQLite
-    const { netBalanceChange, paymentDiff, debtDiff } = await editTransaction({
+    const { netBalanceChange, debtDiff } = await editTransaction({
       uid: user.uid,
       clientId: id,
       txId: editingTransactionId,
@@ -362,10 +382,7 @@ export default function UserDetailsScreen() {
 
     // Actualizar totales locales en memoria
     if (updateLocalUserData) {
-      const localUpdate = {};
-      if (paymentDiff !== 0) localUpdate.totalPayment = (userData?.totalPayment || 0) + paymentDiff;
-      if (debtDiff !== 0) localUpdate.totalDebt = (userData?.totalDebt || 0) + debtDiff;
-      if (Object.keys(localUpdate).length > 0) updateLocalUserData(localUpdate);
+      if (debtDiff !== 0) updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) + debtDiff });
     }
 
     // Reflejar en contexto global
@@ -401,7 +418,7 @@ export default function UserDetailsScreen() {
               if (!oldTx) return;
 
               // El servicio encola en outbox y actualiza la caché SQLite
-              const { balanceChange, totalField } = await deleteTransaction({
+              const { balanceChange, debtDiff } = await deleteTransaction({
                 uid: user.uid,
                 clientId: id,
                 txId: txIdToDel,
@@ -415,7 +432,7 @@ export default function UserDetailsScreen() {
 
               // Actualizar totales locales en memoria
               if (updateLocalUserData) {
-                updateLocalUserData({ [totalField]: (userData?.[totalField] || 0) - oldTx.amount });
+                if (debtDiff !== 0) updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) + debtDiff });
               }
 
               // Reflejar en contexto global
@@ -455,7 +472,7 @@ export default function UserDetailsScreen() {
             setOptionsVisible(false);
             try {
               // El servicio encola en outbox, revierte totales y actualiza caché
-              const { totalPaymentReverted, totalDebtReverted } = await deleteClient({
+              const { totalDebtReverted } = await deleteClient({
                 uid: user.uid,
                 clientId: id,
                 transactions,
@@ -464,7 +481,6 @@ export default function UserDetailsScreen() {
               // Actualizar totales locales en memoria
               if (updateLocalUserData) {
                 updateLocalUserData({
-                  totalPayment: (userData?.totalPayment || 0) - totalPaymentReverted,
                   totalDebt: (userData?.totalDebt || 0) - totalDebtReverted,
                 });
               }
@@ -493,39 +509,73 @@ export default function UserDetailsScreen() {
 
 
   // ─── Renderer de fila de transacción ─────────────────────────────────────
-  const renderTransaction = ({ item }) => (
-    <TouchableOpacity style={styles.transactionCard} onPress={() => openDetailsModal(item)} activeOpacity={0.7}>
-      <View style={styles.transactionIconContainer}>
-        <View style={[styles.iconBg, { backgroundColor: item.type === 'payment' ? '#E8F9EE' : '#FDECEA' }]}>
-          <Ionicons
-            name={item.type === 'payment' ? 'arrow-down-circle' : 'arrow-up-circle'}
-            size={28}
-            color={item.type === 'payment' ? '#34C759' : '#FF3B30'}
-          />
-        </View>
-      </View>
-      <View style={styles.transactionInfo}>
-        <Text style={styles.transactionDescription}>{item.title || item.description}</Text>
-        {item.description && item.description !== item.title ? (
-          <Text style={styles.transactionSubDescription} numberOfLines={1}>{item.description}</Text>
-        ) : null}
-        <Text style={styles.transactionDate}>{item.date}</Text>
+  const renderTransaction = ({ item }) => {
+    let isInvoice = false;
+    let invoiceItems = [];
+    let subtitlePreview = null;
 
-      </View>
-      <View style={styles.transactionRightCol}>
-        <Text style={[styles.transactionAmount, item.type === 'payment' ? styles.positiveBalance : styles.negativeBalance]}>
-          {item.type === 'payment' ? '+' : '-'}${formatCurrency(item.amount)}
-        </Text>
-        <TouchableOpacity
-          style={styles.optionsIcon}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          onPress={(e) => { e.stopPropagation(); openTransactionOptions(item, e); }}
-        >
-          <Ionicons name="ellipsis-vertical" size={20} color="#8E8E93" />
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
+    if (item.description) {
+      try {
+        const parsed = JSON.parse(item.description);
+        if (parsed && parsed.isInvoice && Array.isArray(parsed.items)) {
+          isInvoice = true;
+          invoiceItems = parsed.items;
+          subtitlePreview = invoiceItems
+            .map((i) => `${i.quantity}x ${i.productName}`)
+            .join(', ');
+        }
+      } catch (e) {
+        // No es JSON o es una descripción simple
+      }
+    }
+
+    const iconName = isInvoice
+      ? 'receipt-outline'
+      : item.type === 'payment'
+      ? 'arrow-down-circle'
+      : 'arrow-up-circle';
+    const iconColor = isInvoice
+      ? '#2D8C5A'
+      : item.type === 'payment'
+      ? '#34C759'
+      : '#FF3B30';
+    const iconBgColor = isInvoice
+      ? '#E8F5EE'
+      : item.type === 'payment'
+      ? '#E8F9EE'
+      : '#FDECEA';
+
+    return (
+      <TouchableOpacity style={styles.transactionCard} onPress={() => openDetailsModal(item)} activeOpacity={0.7}>
+        <View style={styles.transactionIconContainer}>
+          <View style={[styles.iconBg, { backgroundColor: iconBgColor }]}>
+            <Ionicons name={iconName} size={26} color={iconColor} />
+          </View>
+        </View>
+        <View style={styles.transactionInfo}>
+          <Text style={styles.transactionDescription}>{item.title || item.description}</Text>
+          {subtitlePreview ? (
+            <Text style={styles.transactionSubDescription} numberOfLines={1}>{subtitlePreview}</Text>
+          ) : item.description && item.description !== item.title && !isInvoice ? (
+            <Text style={styles.transactionSubDescription} numberOfLines={1}>{item.description}</Text>
+          ) : null}
+          <Text style={styles.transactionDate}>{item.date}</Text>
+        </View>
+        <View style={styles.transactionRightCol}>
+          <Text style={[styles.transactionAmount, item.type === 'payment' ? styles.positiveBalance : styles.negativeBalance]}>
+            {item.type === 'payment' ? '+' : '-'}${formatCurrency(item.amount)}
+          </Text>
+          <TouchableOpacity
+            style={styles.optionsIcon}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={(e) => { e.stopPropagation(); openTransactionOptions(item, e); }}
+          >
+            <Ionicons name="ellipsis-vertical" size={20} color="#8E8E93" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
 
   // ─── Estados de carga y error ─────────────────────────────────────────────

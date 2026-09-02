@@ -279,7 +279,7 @@ const StatsCards = ({ userData, onAdjust }) => {
     }
   };
 
-  const isLoadingUser = userData?.totalDebt === undefined && userData?.totalPayment === undefined;
+  const isLoadingUser = userData?.totalDebt === undefined;
   const isOrg = userData?.businessType === 'organization';
 
   // Control del día actual local para resetear automáticamente
@@ -333,12 +333,10 @@ const StatsCards = ({ userData, onAdjust }) => {
     return { gananciaVentas: ganancia, totalVentasAmount: ventasAmount, totalVentas: todaySalesFiltered.length, productosRegistrados: products.length };
   }, [todaySalesFiltered, products]);
 
-  const totalPaymentFB = userData?.totalPayment ?? 0;
-
   return (
     <View style={styles.container}>
       {isOrg ? (
-        // ─── Modo Organización: solo Deudas + Pagos ───
+        // ─── Modo Organización: solo Deudas ───
         <>
           <View style={styles.row}>
             <MetricCard
@@ -349,17 +347,10 @@ const StatsCards = ({ userData, onAdjust }) => {
               trend={-1}
               onEditValue={(v, r) => setOverride('deudas', v, r)}
             />
-            <MetricCard
-              icon="wallet-outline"
-              label="Pagos de la Organización"
-              value={overrides['pagosOrg'] ?? totalPaymentFB}
-              isLoading={isLoadingUser}
-              onEditValue={(v, r) => setOverride('pagosOrg', v, r)}
-            />
           </View>
         </>
       ) : (
-        // ─── Modo Comercial: todas las tarjetas ───
+        // ─── Modo Comercial: tarjetas principales ───
         <>
           {/* Fila 1: Ingresado + Deudas */}
           <View style={styles.row}>
@@ -397,17 +388,6 @@ const StatsCards = ({ userData, onAdjust }) => {
               count={overrides['ventas'] ?? totalVentas}
               isLoading={loadingProducts}
               onEditValue={(v, r) => setOverride('ventas', v, r)}
-            />
-          </View>
-
-          {/* Fila 3: Pagos */}
-          <View style={styles.row}>
-            <MetricCard
-              icon="wallet-outline"
-              label="Total en Pagos"
-              value={overrides['pagos'] ?? totalPaymentFB}
-              isLoading={isLoadingUser}
-              onEditValue={(v, r) => setOverride('pagos', v, r)}
             />
           </View>
         </>

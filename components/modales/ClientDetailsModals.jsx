@@ -249,67 +249,105 @@ export default function ClientDetailsModals({
       >
         <TouchableOpacity style={styles.detailsOverlay} activeOpacity={1} onPress={closeDetailsModal}>
           <TouchableOpacity activeOpacity={1} style={styles.detailsModalContent}>
-            {selectedTransaction && (
-              <>
-                {/* Header con icono y título */}
-                <View style={styles.detailsHeader}>
-                  <View style={[styles.iconBg, {
-                    backgroundColor: selectedTransaction.type === 'payment' ? '#E8F9EE' : '#FDECEA',
-                    marginRight: 12,
-                    width: 48, height: 48, borderRadius: 24,
-                  }]}>
-                    <Ionicons
-                      name={selectedTransaction.type === 'payment' ? 'arrow-down-circle' : 'arrow-up-circle'}
-                      size={30}
-                      color={selectedTransaction.type === 'payment' ? '#34C759' : '#FF3B30'}
-                    />
+            {selectedTransaction && (() => {
+              let parsedInvoice = null;
+              if (selectedTransaction.description) {
+                try {
+                  const p = JSON.parse(selectedTransaction.description);
+                  if (p && p.isInvoice && Array.isArray(p.items)) {
+                    parsedInvoice = p;
+                  }
+                } catch (e) {}
+              }
+
+              const isPayment = selectedTransaction.type === 'payment';
+              const isInvoice = Boolean(parsedInvoice);
+
+              const iconName = isInvoice
+                ? 'receipt-outline'
+                : isPayment
+                ? 'arrow-down-circle'
+                : 'arrow-up-circle';
+              const iconColor = isInvoice ? '#2D8C5A' : isPayment ? '#34C759' : '#FF3B30';
+              const iconBg = isInvoice ? '#E8F5EE' : isPayment ? '#E8F9EE' : '#FDECEA';
+
+              return (
+                <>
+                  {/* Header con icono y título */}
+                  <View style={styles.detailsHeader}>
+                    <View style={[styles.iconBg, { backgroundColor: iconBg, marginRight: 12, width: 48, height: 48, borderRadius: 24 }]}>
+                      <Ionicons name={iconName} size={28} color={iconColor} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.detailsTitle}>{selectedTransaction.title || selectedTransaction.description}</Text>
+                      <Text style={styles.detailsDate}>{selectedTransaction.date}</Text>
+                    </View>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.detailsTitle}>{selectedTransaction.title || selectedTransaction.description}</Text>
-                    <Text style={styles.detailsDate}>{selectedTransaction.date}</Text>
+
+                  {/* Nombre del cliente */}
+                  <View style={styles.detailsClientRow}>
+                    <Ionicons name="person-circle-outline" size={18} color="#4C669F" />
+                    <Text style={styles.detailsClientName}>{client?.name || 'Cliente'}</Text>
                   </View>
-                </View>
 
-                {/* Nombre del cliente */}
-                <View style={styles.detailsClientRow}>
-                  <Ionicons name="person-circle-outline" size={18} color="#4C669F" />
-                  <Text style={styles.detailsClientName}>{client?.name || 'Cliente'}</Text>
-                </View>
+                  {/* Detalle o Factura */}
+                  {isInvoice ? (
+                    <View style={styles.invoiceContainer}>
+                      <Text style={styles.invoiceHeaderLabel}>Productos comprados ({parsedInvoice.items.length})</Text>
+                      <ScrollView style={styles.invoiceItemsList} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+                        {parsedInvoice.items.map((item, idx) => (
+                          <View key={idx} style={styles.invoiceItemRow}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.invoiceItemName}>{item.productName}</Text>
+                              <Text style={styles.invoiceItemDetail}>
+                                {item.quantity} x ${formatCurrency(item.unitPrice)}
+                              </Text>
+                            </View>
+                            <Text style={styles.invoiceItemTotal}>${formatCurrency(item.totalAmount)}</Text>
+                          </View>
+                        ))}
+                      </ScrollView>
+                      <View style={styles.invoiceTotalRow}>
+                        <Text style={styles.invoiceTotalLabel}>Total Factura</Text>
+                        <Text style={styles.invoiceTotalAmount}>${formatCurrency(selectedTransaction.amount)}</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.detailsBody}>
+                      <Text style={styles.detailsLabel}>Monto</Text>
+                      <Text style={[styles.detailsAmount, isPayment ? styles.positiveBalance : styles.negativeBalance]}>
+                        {isPayment ? '+' : '-'}${formatCurrency(selectedTransaction.amount)}
+                      </Text>
 
-                {/* Monto */}
-                <View style={styles.detailsBody}>
-                  <Text style={styles.detailsLabel}>Monto</Text>
-                  <Text style={[styles.detailsAmount, selectedTransaction.type === 'payment' ? styles.positiveBalance : styles.negativeBalance]}>
-                    {selectedTransaction.type === 'payment' ? '+' : '-'}${formatCurrency(selectedTransaction.amount)}
-                  </Text>
-
-                  {/* Descripción (solo si existe y es diferente al título) */}
-                  {selectedTransaction.description && selectedTransaction.description !== selectedTransaction.title && (
-                    <>
-                      <Text style={[styles.detailsLabel, { marginTop: 16 }]}>Descripción</Text>
-                      <Text style={styles.detailsDescriptionText}>{selectedTransaction.description}</Text>
-                    </>
+                      {/* Descripción (solo si existe y es diferente al título) */}
+                      {selectedTransaction.description && selectedTransaction.description !== selectedTransaction.title && (
+                        <>
+                          <Text style={[styles.detailsLabel, { marginTop: 16 }]}>Descripción</Text>
+                          <Text style={styles.detailsDescriptionText}>{selectedTransaction.description}</Text>
+                        </>
+                      )}
+                    </View>
                   )}
-                </View>
 
-                {/* Acciones: Editar | Cerrar */}
-                <View style={styles.detailsActions}>
-                  <TouchableOpacity
-                    style={[styles.detailsActionBtn, styles.detailsEditBtn]}
-                    onPress={() => { closeDetailsModal(); openEditModal(selectedTransaction); }}
-                  >
-                    <Ionicons name="create-outline" size={18} color="#4C669F" />
-                    <Text style={[styles.detailsActionText, { color: '#4C669F' }]}>Editar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.detailsActionBtn, styles.detailsCloseButton]}
-                    onPress={closeDetailsModal}
-                  >
-                    <Text style={styles.detailsCloseText}>Cerrar</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
+                  {/* Acciones: Editar | Cerrar */}
+                  <View style={styles.detailsActions}>
+                    <TouchableOpacity
+                      style={[styles.detailsActionBtn, styles.detailsEditBtn]}
+                      onPress={() => { closeDetailsModal(); openEditModal(selectedTransaction); }}
+                    >
+                      <Ionicons name="create-outline" size={18} color="#4C669F" />
+                      <Text style={[styles.detailsActionText, { color: '#4C669F' }]}>Editar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.detailsActionBtn, styles.detailsCloseButton]}
+                      onPress={closeDetailsModal}
+                    >
+                      <Text style={styles.detailsCloseText}>Cerrar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              );
+            })()}
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
@@ -386,11 +424,6 @@ export default function ClientDetailsModals({
           <View style={styles.shareSheet}>
             {/* Handle */}
             <View style={styles.sheetHandle} />
-
-            <Text style={styles.shareTitle}>Compartir comprobante</Text>
-            <Text style={styles.shareSubtitle}>
-              Se generará una imagen lista para enviar
-            </Text>
 
             {/* Previsualización de la tarjeta — renderizada aquí y capturada */}
             <ScrollView
@@ -856,5 +889,67 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'white',
     fontWeight: '700',
+  },
+  /* ── Estilos de Factura desglosada ── */
+  invoiceContainer: {
+    backgroundColor: '#F9FAFC',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#E8ECF4',
+    marginBottom: 16,
+  },
+  invoiceHeaderLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#8E8E93',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  invoiceItemsList: {
+    maxHeight: 180,
+  },
+  invoiceItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F2F8',
+  },
+  invoiceItemName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1C1C1E',
+  },
+  invoiceItemDetail: {
+    fontSize: 13,
+    color: '#8E8E93',
+    marginTop: 2,
+  },
+  invoiceItemTotal: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1C1C1E',
+  },
+  invoiceTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1.5,
+    borderTopColor: '#D0D6E5',
+  },
+  invoiceTotalLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1C1C1E',
+  },
+  invoiceTotalAmount: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#FF3B30',
   },
 });

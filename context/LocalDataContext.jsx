@@ -300,11 +300,13 @@ export function LocalDataProvider({ children }) {
       _date: new Date(now),
     };
 
-    // Actualizar balance del cliente en memoria
-    const balanceChange = type === 'payment' ? amount : -amount;
-    setClientsState((prev) =>
-      prev.map((c) => c.id === clientId ? { ...c, balance: (c.balance || 0) + balanceChange } : c)
-    );
+    // Actualizar balance del cliente en memoria si hay cliente
+    if (clientId) {
+      const balanceChange = type === 'payment' ? amount : -amount;
+      setClientsState((prev) =>
+        prev.map((c) => c.id === clientId ? { ...c, balance: (c.balance || 0) + balanceChange } : c)
+      );
+    }
 
     pendingOpsRef.current.addedTxs[newTx.id] = newTx;
     setRecentActivityState((prev) => [newTx, ...prev].slice(0, 5));
@@ -408,21 +410,7 @@ export function LocalDataProvider({ children }) {
     setRecentSalesState((prev) => [newSale, ...prev].slice(0, 10));
     setTodaySalesState((prev) => [newSale, ...prev]);
 
-    // Agregar también a actividad reciente (home screen)
-    const activityItem = {
-      id: saleId,
-      type: 'sale',
-      amount: totalAmount,
-      clientName,
-      clientId,
-      description: productName || '',
-      productName: productName || '',
-      createdAt: now,
-      _timestamp: now,
-      _date: new Date(now),
-      _source: 'sale',
-    };
-    setRecentActivityState((prev) => [activityItem, ...prev].slice(0, 8));
+
 
     // Actualizar stock en memoria
     if (newStock >= 0) {

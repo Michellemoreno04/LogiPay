@@ -165,30 +165,36 @@ export default function ProductDetailScreen() {
 
   const renderSaleItem = ({ item }) => (
     <View style={styles.saleCard}>
-      <View style={styles.saleAvatarWrap}>
-        <Text style={styles.saleAvatarText}>{(item.clientName || '?')[0].toUpperCase()}</Text>
-      </View>
-      <View style={styles.saleInfo}>
-        <Text style={styles.saleClientName}>{item.clientName}</Text>
-        <Text style={styles.saleDate}>{item.date}</Text>
-        <View style={styles.saleTagRow}>
-          <View style={styles.saleTag}>
-            <Ionicons name="layers" size={11} color="#2D8C5A" />
-            <Text style={styles.saleTagText}>{item.quantity} unidad{item.quantity !== 1 ? 'es' : ''}</Text>
+      <TouchableOpacity
+        style={styles.saleClickableArea}
+        onPress={() => item.clientId && item.clientId !== 'global' && router.push(`/${item.clientId}`)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.saleAvatarWrap}>
+          <Text style={styles.saleAvatarText}>{(item.clientName || '?')[0].toUpperCase()}</Text>
+        </View>
+        <View style={styles.saleInfo}>
+          <Text style={styles.saleClientName}>{item.clientName}</Text>
+          <Text style={styles.saleDate}>{item.date}</Text>
+          <View style={styles.saleTagRow}>
+            <View style={styles.saleTag}>
+              <Ionicons name="layers" size={11} color="#2D8C5A" />
+              <Text style={styles.saleTagText}>{item.quantity} unidad{item.quantity !== 1 ? 'es' : ''}</Text>
+            </View>
           </View>
         </View>
-      </View>
-      <View style={styles.salePriceCol}>
-        <Text style={styles.saleTotalAmount}>${parseFloat(item.totalAmount || 0).toFixed(2)}</Text>
-        <Text style={styles.saleUnitPrice}>${parseFloat(item.unitPrice || 0).toFixed(2)}/u</Text>
-        <TouchableOpacity
-          onPress={() => handleDeleteSale(item)}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={styles.saleDeleteBtn}
-        >
-          <Ionicons name="trash-outline" size={15} color="#FF3B30" />
-        </TouchableOpacity>
-      </View>
+        <View style={styles.salePriceCol}>
+          <Text style={styles.saleTotalAmount}>${parseFloat(item.totalAmount || 0).toFixed(2)}</Text>
+          <Text style={styles.saleUnitPrice}>${parseFloat(item.unitPrice || 0).toFixed(2)}/u</Text>
+        </View>
+      </TouchableOpacity>
+      <TouchableOpacity
+        onPress={() => handleDeleteSale(item)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        style={styles.saleDeleteBtn}
+      >
+        <Ionicons name="trash-outline" size={15} color="#FF3B30" />
+      </TouchableOpacity>
     </View>
   );
 
@@ -481,6 +487,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 3,
+  },
+  saleClickableArea: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   saleAvatarWrap: {
     width: 44,
