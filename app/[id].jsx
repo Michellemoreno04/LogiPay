@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -20,12 +20,12 @@ import { useLocalData } from '../context/LocalDataContext';
 import { db as firestore } from '../firebaseConfig/config';
 import {
   addTransaction,
-  deleteClient,
   deleteTransaction,
-  editTransaction,
+  editTransaction
 } from '../utils/clientService';
 import {
   getClientById,
+  getPendingOutbox,
   getTransactionsByClient,
   insertClient,
   insertTransaction,
@@ -66,6 +66,23 @@ export default function UserDetailsScreen() {
     const localClient = await getClientById(user.uid, id);
     if (localClient) setClient(localClient);
   }, [user, id]);
+
+  const reloadTransactionsFromDb = useCallback(async () => {
+    if (!user || !id) return;
+    const localTxs = await getTransactionsByClient(user.uid, id);
+    setTransactions(localTxs.map((tx) => ({
+      ...tx,
+      date: tx.date || formatDate(tx.createdAt),
+    })));
+  }, [user, id]);
+
+  // Recargar datos cada vez que la pantalla entra en foco (ej. al volver de quick-scan)
+  useFocusEffect(
+    useCallback(() => {
+      reloadClientFromDb();
+      reloadTransactionsFromDb();
+    }, [reloadClientFromDb, reloadTransactionsFromDb])
+  );
 
   // Sincronizar client desde contextClients si cambia en memoria
   useEffect(() => {
@@ -119,8 +136,19 @@ export default function UserDetailsScreen() {
         const clientRef = doc(firestore, 'users', user.uid, 'clients', id);
         unsubscribe = onSnapshot(
           clientRef,
+          { includeMetadataChanges: true },
           async (snap) => {
             if (!isMounted) return;
+            // Si el snapshot viene del caché de Firestore sin conexión, no sobreescribir SQLite
+            if (snap.metadata?.fromCache) return;
+
+            // Si hay operaciones pendientes en outbox para este cliente, no pisar balance local
+            const pending = await getPendingOutbox();
+            const hasPendingOutbox = pending.some(
+              (p) => (p.collection.includes('clients') && p.docId === id) || (p.collection.includes('transactions') && p.collection.includes(id))
+            );
+            if (hasPendingOutbox) return;
+
             if (snap.exists()) {
               const data = { id: snap.id, ...snap.data() };
               // Normalizar Firestore Timestamp
@@ -180,8 +208,11 @@ export default function UserDetailsScreen() {
         const q = query(txRef, orderBy('createdAt', 'desc'));
         unsubscribe = onSnapshot(
           q,
+          { includeMetadataChanges: true },
           async (snapshot) => {
             if (!isMounted) return;
+            if (snapshot.metadata?.fromCache) return;
+
             // Guardar en SQLite (INSERT OR REPLACE no duplica)
             for (const docSnap of snapshot.docs) {
               const data = docSnap.data();
@@ -234,11 +265,11 @@ export default function UserDetailsScreen() {
   }, [user, id, reloadClientFromDb]);
 
 
-  // ─── Abrir modal (nueva transacción) ─────────────────────────────────────
+  // ─── Abrir modal (nueva transacción) ───────────────────────────────────────
   const openModal = useCallback((type) => {
     setTransactionType(type);
     setAmount('');
-    setTitle(type === 'debt' ? 'Deuda' : 'Pago');
+    setTitle(type === 'debt' ? 'Deuda' : type === 'debt_payment' ? 'Abono' : 'Pago');
     setDescription('');
     setEditingTransactionId(null);
     setModalVisible(true);
@@ -334,8 +365,11 @@ export default function UserDetailsScreen() {
 
     // Actualizar totales locales en memoria
     if (updateLocalUserData) {
-      const debtChange = transactionType === 'payment' ? -parsedAmount : parsedAmount;
-      updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) + debtChange });
+      let debtChange = 0;
+      if (transactionType === 'payment') debtChange = -parsedAmount;
+      else if (transactionType === 'debt') debtChange = parsedAmount;
+      else if (transactionType === 'debt_payment') debtChange = -balanceChange; // balanceChange ya fue limitado al máximo de deuda
+      if (debtChange !== 0) updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) + debtChange });
     }
 
     // Reflejar en contexto global
@@ -458,53 +492,53 @@ export default function UserDetailsScreen() {
 
 
   // ─── Eliminar cliente ─────────────────────────────────────────────────────
-  const handleDeleteClient = async () => {
-    Alert.alert(
-      'Eliminar Cliente',
-      '¿Estás seguro de que deseas eliminar a este cliente? Esta acción no se puede deshacer y se borrarán todas sus transacciones.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            setDeleting(true);
-            setOptionsVisible(false);
-            try {
-              // El servicio encola en outbox, revierte totales y actualiza caché
-              const { totalDebtReverted } = await deleteClient({
-                uid: user.uid,
-                clientId: id,
-                transactions,
-              });
+  // const handleDeleteClient = async () => {
+  //   Alert.alert(
+  //     'Eliminar Cliente',
+  //     '¿Estás seguro de que deseas eliminar a este cliente? Esta acción no se puede deshacer y se borrarán todas sus transacciones.',
+  //     [
+  //       { text: 'Cancelar', style: 'cancel' },
+  //       {
+  //         text: 'Eliminar',
+  //         style: 'destructive',
+  //         onPress: async () => {
+  //           setDeleting(true);
+  //           setOptionsVisible(false);
+  //           try {
+  //             // El servicio encola en outbox, revierte totales y actualiza caché
+  //             const { totalDebtReverted } = await deleteClient({
+  //               uid: user.uid,
+  //               clientId: id,
+  //               transactions,
+  //             });
 
-              // Actualizar totales locales en memoria
-              if (updateLocalUserData) {
-                updateLocalUserData({
-                  totalDebt: (userData?.totalDebt || 0) - totalDebtReverted,
-                });
-              }
+  //             // Actualizar totales locales en memoria
+  //             if (updateLocalUserData) {
+  //               updateLocalUserData({
+  //                 totalDebt: (userData?.totalDebt || 0) - totalDebtReverted,
+  //               });
+  //             }
 
-              // Reflejar en contexto global
-              if (deleteClientOptimistic) {
-                await deleteClientOptimistic(id);
-              }
+  //             // Reflejar en contexto global
+  //             if (deleteClientOptimistic) {
+  //               await deleteClientOptimistic(id);
+  //             }
 
-              syncOutbox();
-              DeviceEventEmitter.emit('local-db-changed');
-              router.back();
-              showAlert('Cliente eliminado correctamente.', 'success');
-            } catch (error) {
-              console.error('[id.jsx] handleDeleteClient:', error);
-              showAlert('No se pudo eliminar el cliente.', 'error');
-            } finally {
-              setDeleting(false);
-            }
-          },
-        },
-      ]
-    );
-  };
+  //             syncOutbox();
+  //             DeviceEventEmitter.emit('local-db-changed');
+  //             router.back();
+  //             showAlert('Cliente eliminado correctamente.', 'success');
+  //           } catch (error) {
+  //             console.error('[id.jsx] handleDeleteClient:', error);
+  //             showAlert('No se pudo eliminar el cliente.', 'error');
+  //           } finally {
+  //             setDeleting(false);
+  //           }
+  //         },
+  //       },
+  //     ]
+  //   );
+  // };
 
 
 
@@ -529,21 +563,22 @@ export default function UserDetailsScreen() {
       }
     }
 
+    const isPayment = item.type === 'payment' || item.type === 'debt_payment' || item.type === 'recurring_payment';
     const iconName = isInvoice
       ? 'receipt-outline'
-      : item.type === 'payment'
-      ? 'arrow-down-circle'
-      : 'arrow-up-circle';
+      : isPayment
+        ? 'arrow-down-circle'
+        : 'arrow-up-circle';
     const iconColor = isInvoice
       ? '#2D8C5A'
-      : item.type === 'payment'
-      ? '#34C759'
-      : '#FF3B30';
+      : isPayment
+        ? '#34C759'
+        : '#FF3B30';
     const iconBgColor = isInvoice
       ? '#E8F5EE'
-      : item.type === 'payment'
-      ? '#E8F9EE'
-      : '#FDECEA';
+      : isPayment
+        ? '#E8F9EE'
+        : '#FDECEA';
 
     return (
       <TouchableOpacity style={styles.transactionCard} onPress={() => openDetailsModal(item)} activeOpacity={0.7}>
@@ -562,8 +597,8 @@ export default function UserDetailsScreen() {
           <Text style={styles.transactionDate}>{item.date}</Text>
         </View>
         <View style={styles.transactionRightCol}>
-          <Text style={[styles.transactionAmount, item.type === 'payment' ? styles.positiveBalance : styles.negativeBalance]}>
-            {item.type === 'payment' ? '+' : '-'}${formatCurrency(item.amount)}
+          <Text style={[styles.transactionAmount, isPayment ? styles.positiveBalance : styles.negativeBalance]}>
+            {isPayment ? '+' : '-'}${formatCurrency(item.amount)}
           </Text>
           <TouchableOpacity
             style={styles.optionsIcon}
@@ -629,7 +664,7 @@ export default function UserDetailsScreen() {
           {client.phone ? <Text style={styles.userInfoText}>{client.phone}</Text> : null}
 
           <View style={styles.balanceBox}>
-            <Text style={styles.balanceTitle}>Saldo Actual</Text>
+            <Text style={styles.balanceTitle}>Deuda actual</Text>
             <Text style={[
               styles.balanceMainAmount,
               balance < 0 ? styles.negativeBalance : balance > 0 ? styles.positiveBalance : styles.neutralBalance,
@@ -639,9 +674,22 @@ export default function UserDetailsScreen() {
           </View>
 
           <View style={styles.actionButtons}>
-            <TouchableOpacity style={[styles.actionButton, styles.paymentButton]} onPress={() => openModal('payment')}>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.paymentButton]}
+              onPress={() => {
+                if (balance >= 0) {
+                  Alert.alert(
+                    'Sin deuda pendiente',
+                    `${client?.name || 'Este usuario'} no tiene deudas pendientes en este momento.`,
+                    [{ text: 'Entendido', style: 'default' }]
+                  );
+                  return;
+                }
+                openModal('debt_payment');
+              }}
+            >
               <Ionicons name="add-circle-outline" size={20} color="white" />
-              <Text style={styles.actionButtonText}>Abonar Pago</Text>
+              <Text style={styles.actionButtonText}>Abono a deuda</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.actionButton, styles.debtButton]} onPress={() => openModal('debt')}>
               <Ionicons name="remove-circle-outline" size={20} color="white" />
@@ -693,7 +741,7 @@ export default function UserDetailsScreen() {
           saving={saving}
           deleting={deleting}
           handleSaveTransaction={handleSaveTransaction}
-          handleDeleteClient={handleDeleteClient}
+          //handleDeleteClient={handleDeleteClient}
           handleDeleteTransaction={handleDeleteTransaction}
           openEditModal={openEditModal}
         />

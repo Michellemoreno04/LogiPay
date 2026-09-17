@@ -243,8 +243,12 @@ export const recordSale = async ({ uid, productId, productName, clientId, client
   });
 
   if (hasClient) {
-    const txRef = collection(db, 'users', uid, 'clients', clientId, 'transactions');
-    txId = doc(txRef).id;
+    try {
+      const txRef = collection(db, 'users', uid, 'clients', clientId, 'transactions');
+      txId = doc(txRef).id;
+    } catch (_) {
+      txId = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    }
 
     await insertTransaction(uid, {
       id: txId,
@@ -258,11 +262,10 @@ export const recordSale = async ({ uid, productId, productName, clientId, client
     });
 
     const client = await getClientById(uid, clientId);
-    if (client) {
-      await updateClient(uid, clientId, {
-        balance: (client.balance || 0) - totalAmount,
-      });
-    }
+    const currentBalance = client?.balance ?? 0;
+    await updateClient(uid, clientId, {
+      balance: currentBalance - totalAmount,
+    });
 
     await updateUserDataField(uid, 'totalDebt', totalAmount);
 
@@ -424,8 +427,12 @@ export const recordSaleOrder = async ({ uid, clientId, clientName, items }) => {
   });
 
   if (hasClient) {
-    const txRef = collection(db, 'users', uid, 'clients', clientId, 'transactions');
-    txId = doc(txRef).id;
+    try {
+      const txRef = collection(db, 'users', uid, 'clients', clientId, 'transactions');
+      txId = doc(txRef).id;
+    } catch (_) {
+      txId = `tx_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    }
 
     await insertTransaction(uid, {
       id: txId,
@@ -439,11 +446,10 @@ export const recordSaleOrder = async ({ uid, clientId, clientName, items }) => {
     });
 
     const client = await getClientById(uid, clientId);
-    if (client) {
-      await updateClient(uid, clientId, {
-        balance: (client.balance || 0) - totalOrderAmount,
-      });
-    }
+    const currentBalance = client?.balance ?? 0;
+    await updateClient(uid, clientId, {
+      balance: currentBalance - totalOrderAmount,
+    });
 
     await updateUserDataField(uid, 'totalDebt', totalOrderAmount);
 

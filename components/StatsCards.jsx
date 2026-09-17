@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
+  DeviceEventEmitter,
+  Keyboard,
   Modal,
   Platform,
   StyleSheet,
@@ -14,7 +15,11 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { useAuth } from '../authContext/authContext';
 import { useLocalData } from '../context/LocalDataContext';
+import { getAllClientTransactions } from '../utils/database';
+
+
 
 const formatCurrency = (value) =>
   Math.abs(value ?? 0).toLocaleString('en-US', {
@@ -25,17 +30,42 @@ const formatCurrency = (value) =>
 const formatNumber = (value) =>
   (value ?? 0).toLocaleString('en-US');
 
+// ─── Formateador de input con comas de miles ───
+const formatInputWithCommas = (text) => {
+  // Solo dígitos y un punto decimal
+  const clean = text.replace(/[^0-9.]/g, '');
+  const parts = clean.split('.');
+  // Agrega comas al entero
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  // Solo un punto decimal permitido
+  return parts.length > 2 ? parts[0] + '.' + parts[1] : parts.join('.');
+};
+
 // ─── Modal de ajuste ───
 function AdjustModal({ visible, label, currentValue, isCurrency, accentColors, onSave, onClose }) {
   const [inputValue, setInputValue] = useState(String(currentValue ?? 0));
   const [reason, setReason] = useState('');
+  const [kbHeight, setKbHeight] = useState(0);
 
   useEffect(() => {
     if (visible) {
-      setInputValue(currentValue !== undefined && currentValue !== null ? String(currentValue) : '0');
+      const raw = currentValue !== undefined && currentValue !== null ? String(currentValue) : '0';
+      setInputValue(formatInputWithCommas(raw));
       setReason('');
+      setKbHeight(0);
     }
   }, [visible, currentValue]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => setKbHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKbHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const handleSave = () => {
     const parsed = parseFloat(inputValue.replace(/,/g, ''));
@@ -53,85 +83,80 @@ function AdjustModal({ visible, label, currentValue, isCurrency, accentColors, o
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
-      >
-        <TouchableWithoutFeedback onPress={onClose}>
-          <View style={modalStyles.overlay}>
-            <TouchableWithoutFeedback>
-              <View style={modalStyles.sheet}>
-                {/* Handle bar */}
-                <View style={modalStyles.handle} />
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={modalStyles.overlay}>
+          <TouchableWithoutFeedback>
+            <View style={[modalStyles.sheet, { marginBottom: kbHeight }]}>
+              {/* Handle bar */}
+              <View style={modalStyles.handle} />
 
-                {/* Encabezado */}
-                <View style={modalStyles.header}>
-                  <LinearGradient colors={accentColors} style={modalStyles.iconCircle}>
-                    <Ionicons name="create-outline" size={22} color="#fff" />
-                  </LinearGradient>
-                  <View style={{ flex: 1, marginLeft: 14 }}>
-                    <Text style={modalStyles.title}>Ajustar monto</Text>
-                    <Text style={modalStyles.subtitle}>{label}</Text>
-                  </View>
-                  <TouchableOpacity onPress={onClose} style={modalStyles.closeBtn}>
-                    <Ionicons name="close" size={22} color="#8E8E93" />
-                  </TouchableOpacity>
+              {/* Encabezado */}
+              <View style={modalStyles.header}>
+                <LinearGradient colors={accentColors} style={modalStyles.iconCircle}>
+                  <Ionicons name="create-outline" size={22} color="#fff" />
+                </LinearGradient>
+                <View style={{ flex: 1, marginLeft: 14 }}>
+                  <Text style={modalStyles.title}>Ajustar monto</Text>
+                  <Text style={modalStyles.subtitle}>{label}</Text>
                 </View>
-
-                {/* Campo */}
-                <View style={[modalStyles.inputWrapper, { borderColor: accentColors[0] + '55' }]}>
-                  {isCurrency && (
-                    <Text style={[modalStyles.currency, { color: accentColors[0] }]}>$</Text>
-                  )}
-                  <TextInput
-                    style={modalStyles.input}
-                    value={inputValue}
-                    onChangeText={setInputValue}
-                    keyboardType="decimal-pad"
-                    autoFocus
-                    selectTextOnFocus
-                    placeholder="0.00"
-                    placeholderTextColor="#C7C7CC"
-                  />
-                </View>
-
-                {/* Motivo del cambio */}
-                <Text style={modalStyles.reasonLabel}>Motivo del cambio *</Text>
-                <View style={[modalStyles.reasonInputWrapper, { borderColor: accentColors[0] + '33' }]}>
-                  <TextInput
-                    style={modalStyles.reasonInput}
-                    value={reason}
-                    onChangeText={setReason}
-                    placeholder="Explica el porqué del cambio..."
-                    placeholderTextColor="#9CA3AF"
-                    multiline
-                    numberOfLines={2}
-                    maxLength={150}
-                  />
-                </View>
-
-                {/* Botones */}
-                <View style={modalStyles.btnRow}>
-                  <TouchableOpacity onPress={onClose} style={modalStyles.cancelBtn} activeOpacity={0.7}>
-                    <Text style={modalStyles.cancelText}>Cancelar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={handleSave} activeOpacity={0.8} style={{ flex: 1 }}>
-                    <LinearGradient
-                      colors={accentColors}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={modalStyles.saveBtn}
-                    >
-                      <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                      <Text style={modalStyles.saveText}>Guardar</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity onPress={onClose} style={modalStyles.closeBtn}>
+                  <Ionicons name="close" size={22} color="#8E8E93" />
+                </TouchableOpacity>
               </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
+
+              {/* Campo */}
+              <View style={[modalStyles.inputWrapper, { borderColor: accentColors[0] + '55' }]}>
+                {isCurrency && (
+                  <Text style={[modalStyles.currency, { color: accentColors[0] }]}>$</Text>
+                )}
+                <TextInput
+                  style={modalStyles.input}
+                  value={inputValue}
+                  onChangeText={(text) => setInputValue(formatInputWithCommas(text))}
+                  keyboardType="decimal-pad"
+                  autoFocus
+                  selectTextOnFocus
+                  placeholder="0.00"
+                  placeholderTextColor="#C7C7CC"
+                />
+              </View>
+
+              {/* Motivo del cambio */}
+              <Text style={modalStyles.reasonLabel}>Motivo del cambio *</Text>
+              <View style={[modalStyles.reasonInputWrapper, { borderColor: accentColors[0] + '33' }]}>
+                <TextInput
+                  style={modalStyles.reasonInput}
+                  value={reason}
+                  onChangeText={setReason}
+                  placeholder="Explica el porqué del cambio..."
+                  placeholderTextColor="#9CA3AF"
+                  multiline
+                  numberOfLines={2}
+                  maxLength={150}
+                />
+              </View>
+
+              {/* Botones */}
+              <View style={modalStyles.btnRow}>
+                <TouchableOpacity onPress={onClose} style={modalStyles.cancelBtn} activeOpacity={0.7}>
+                  <Text style={modalStyles.cancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleSave} activeOpacity={0.8} style={{ flex: 1 }}>
+                  <LinearGradient
+                    colors={accentColors}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={modalStyles.saveBtn}
+                  >
+                    <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                    <Text style={modalStyles.saveText}>Guardar</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 }
@@ -157,48 +182,50 @@ function MetricCard({ icon, label, value, isLoading, trend, onEditValue, accentC
 
   return (
     <View style={styles.cardWrapper}>
-      <TouchableOpacity onPress={() => setModalVisible(true)} activeOpacity={0.94} style={{ flex: 1 }}>
-        <View style={styles.statCard}>
-          {/* Línea superior sutil */}
-          <View style={styles.topDivider} />
+      <View style={styles.statCard}>
+        {/* Línea superior sutil */}
+        <View style={styles.topDivider} />
 
-          <View style={styles.cardInner}>
-            {/* Fila superior: ícono + tendencia */}
-            <View style={styles.cardTopRow}>
-              <View style={styles.iconBg}>
-                <Ionicons name={icon} size={16} color={CORP.iconColor} />
+        <View style={styles.cardInner}>
+          {/* Fila superior: ícono + tendencia */}
+          <View style={styles.cardTopRow}>
+            <View style={styles.iconBg}>
+              <Ionicons name={icon} size={16} color={CORP.iconColor} />
+            </View>
+            {trend !== undefined && (
+              <View style={styles.trendBadge}>
+                <Ionicons
+                  name={trend >= 0 ? 'arrow-up' : 'arrow-down'}
+                  size={10}
+                  color={trend >= 0 ? CORP.upColor : CORP.downColor}
+                />
               </View>
-              {trend !== undefined && (
-                <View style={styles.trendBadge}>
-                  <Ionicons
-                    name={trend >= 0 ? 'arrow-up' : 'arrow-down'}
-                    size={10}
-                    color={trend >= 0 ? CORP.upColor : CORP.downColor}
-                  />
-                </View>
-              )}
-            </View>
-
-            {/* Etiqueta */}
-            <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
-
-            {/* Valor */}
-            {isLoading ? (
-              <ActivityIndicator size="small" color={CORP.iconColor} style={styles.loader} />
-            ) : (
-              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
-                ${formatCurrency(value)}
-              </Text>
             )}
-
-            {/* Footer */}
-            <View style={styles.cardFooter}>
-              <Ionicons name="pencil-outline" size={11} color={CORP.editColor} />
-              <Text style={styles.footerText}>Editar</Text>
-            </View>
           </View>
+
+          {/* Etiqueta */}
+          <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
+
+          {/* Valor */}
+          {isLoading ? (
+            <ActivityIndicator size="small" color={CORP.iconColor} style={styles.loader} />
+          ) : (
+            <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
+              ${formatCurrency(value)}
+            </Text>
+          )}
+
+          {/* Footer — solo el botón Editar abre el modal */}
+          <TouchableOpacity
+            style={styles.cardFooter}
+            onPress={() => setModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="pencil-outline" size={11} color={CORP.editColor} />
+            <Text style={styles.footerText}>Editar</Text>
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
 
       <AdjustModal
         visible={modalVisible}
@@ -219,39 +246,41 @@ function CountCard({ icon, label, count, isLoading, onEditValue, accentColors })
 
   return (
     <View style={styles.cardWrapper}>
-      <TouchableOpacity onPress={() => setModalVisible(true)} activeOpacity={0.94} style={{ flex: 1 }}>
-        <View style={styles.statCard}>
-          {/* Línea superior sutil */}
-          <View style={styles.topDivider} />
+      <View style={styles.statCard}>
+        {/* Línea superior sutil */}
+        <View style={styles.topDivider} />
 
-          <View style={styles.cardInner}>
-            {/* Fila superior: ícono */}
-            <View style={styles.cardTopRow}>
-              <View style={styles.iconBg}>
-                <Ionicons name={icon} size={16} color={CORP.iconColor} />
-              </View>
-            </View>
-
-            {/* Etiqueta */}
-            <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
-
-            {/* Valor */}
-            {isLoading ? (
-              <ActivityIndicator size="small" color={CORP.iconColor} style={styles.loader} />
-            ) : (
-              <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
-                {formatNumber(count)}
-              </Text>
-            )}
-
-            {/* Footer */}
-            <View style={styles.cardFooter}>
-              <Ionicons name="pencil-outline" size={11} color={CORP.editColor} />
-              <Text style={styles.footerText}>Editar</Text>
+        <View style={styles.cardInner}>
+          {/* Fila superior: ícono */}
+          <View style={styles.cardTopRow}>
+            <View style={styles.iconBg}>
+              <Ionicons name={icon} size={16} color={CORP.iconColor} />
             </View>
           </View>
+
+          {/* Etiqueta */}
+          <Text style={styles.statLabel} numberOfLines={2}>{label}</Text>
+
+          {/* Valor */}
+          {isLoading ? (
+            <ActivityIndicator size="small" color={CORP.iconColor} style={styles.loader} />
+          ) : (
+            <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
+              {formatNumber(count)}
+            </Text>
+          )}
+
+          {/* Footer — solo el botón Editar abre el modal */}
+          <TouchableOpacity
+            style={styles.cardFooter}
+            onPress={() => setModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="pencil-outline" size={11} color={CORP.editColor} />
+            <Text style={styles.footerText}>Editar</Text>
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
+      </View>
 
       <AdjustModal
         visible={modalVisible}
@@ -266,9 +295,156 @@ function CountCard({ icon, label, count, isLoading, onEditValue, accentColors })
   );
 }
 
+// ─── Meses en español (necesarios para calcular estadísticas de membresía) ───
+const MONTH_NAMES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
+
+const MONTH_SHORT = [
+  'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+  'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'
+];
+
+// ─── Helper: Estadísticas mensuales por miembro ───
+function getMemberMonthStats(member, transactions, selectedYear, selectedMonth) {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  const memberPayments = (transactions || []).filter(
+    (tx) => tx.clientId === member.id && tx.type === 'recurring_payment'
+  );
+
+  const paymentsInSelectedMonth = memberPayments.filter((tx) => {
+    const d = new Date(tx.createdAt);
+    return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
+  });
+  const totalPaidInSelectedMonth = paymentsInSelectedMonth.reduce(
+    (sum, tx) => sum + (Number(tx.amount) || 0),
+    0
+  );
+
+  return {
+    totalPaidInSelectedMonth,
+    hasPaidSelectedMonth: totalPaidInSelectedMonth > 0,
+  };
+}
+
+// ─── Tarjeta de Pagos Recurrentes para Organización ───
+function RecurringPaymentsCard({ clients, transactions, isLoading, value, onEditValue }) {
+  const [modalVisible, setModalVisible] = useState(false);
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+
+  // Total pagado este mes por todos los miembros (valor base)
+  const currentMonthTotal = useMemo(() => {
+    if (!transactions) return 0;
+    return transactions
+      .filter((tx) => {
+        if (tx.type !== 'recurring_payment') return false;
+        const d = new Date(tx.createdAt);
+        return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+      })
+      .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+  }, [transactions, currentYear, currentMonth]);
+
+  // Si hay override externo lo usamos, si no el total calculado
+  const displayValue = value !== undefined ? value : currentMonthTotal;
+
+  return (
+    <View style={styles.cardWrapper}>
+      <View style={styles.statCard}>
+        {/* Línea superior azul vibrante */}
+        <View style={[styles.topDivider, { backgroundColor: '#2563EB' }]} />
+
+        <View style={styles.cardInner}>
+          {/* Fila superior: solo ícono */}
+          <View style={styles.cardTopRow}>
+            <View style={[styles.iconBg, { backgroundColor: '#EFF6FF' }]}>
+              <Ionicons name="repeat-outline" size={17} color="#2563EB" />
+            </View>
+          </View>
+
+          {/* Etiqueta */}
+          <Text style={styles.statLabel} numberOfLines={2}>
+            Pagos Recurrentes
+          </Text>
+
+          {/* Valor */}
+          {isLoading ? (
+            <ActivityIndicator size="small" color="#2563EB" style={styles.loader} />
+          ) : (
+            <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
+              ${formatCurrency(displayValue)}
+            </Text>
+          )}
+
+          {/* Footer — solo el botón Editar abre el modal */}
+          <TouchableOpacity
+            style={styles.cardFooter}
+            onPress={() => setModalVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="pencil-outline" size={11} color="#55575cff" />
+            <Text style={[styles.footerText, { color: '#4e505584', fontWeight: '600' }]}>
+              Editar
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <AdjustModal
+        visible={modalVisible}
+        label="Pagos Recurrentes"
+        currentValue={displayValue}
+        isCurrency
+        accentColors={['#2563EB', '#1D4ED8']}
+        onSave={(val, reason) => onEditValue && onEditValue(val, reason)}
+        onClose={() => setModalVisible(false)}
+      />
+    </View>
+  );
+}
+
 // ─── Componente principal ───
 const StatsCards = ({ userData, onAdjust }) => {
+  const { user } = useAuth();
   const { clients, products, recentSales, todaySales, loadingClients, loadingProducts } = useLocalData();
+
+  const isOrg = userData?.businessType === 'organization';
+
+  // Transacciones de miembros para organización
+  const [transactions, setTransactions] = useState([]);
+  const [loadingTx, setLoadingTx] = useState(false);
+
+  useEffect(() => {
+    if (!user || !isOrg) return;
+    let isMounted = true;
+
+    const loadTxs = async () => {
+      setLoadingTx(true);
+      try {
+        const txs = await getAllClientTransactions(user.uid);
+        if (isMounted) {
+          setTransactions(txs || []);
+        }
+      } catch (err) {
+        console.error('Error loading org transactions:', err);
+      } finally {
+        if (isMounted) setLoadingTx(false);
+      }
+    };
+
+    loadTxs();
+
+    const sub = DeviceEventEmitter.addListener('local-db-changed', loadTxs);
+    return () => {
+      isMounted = false;
+      sub.remove();
+    };
+  }, [user, isOrg]);
 
   // Overrides locales por tarjeta
   const [overrides, setOverrides] = useState({});
@@ -280,7 +456,6 @@ const StatsCards = ({ userData, onAdjust }) => {
   };
 
   const isLoadingUser = userData?.totalDebt === undefined;
-  const isOrg = userData?.businessType === 'organization';
 
   // Control del día actual local para resetear automáticamente
   const [currentDayKey, setCurrentDayKey] = useState(() => {
@@ -336,7 +511,7 @@ const StatsCards = ({ userData, onAdjust }) => {
   return (
     <View style={styles.container}>
       {isOrg ? (
-        // ─── Modo Organización: solo Deudas ───
+        // ─── Modo Organización: Deudas Pendientes + Pagos Recurrentes ───
         <>
           <View style={styles.row}>
             <MetricCard
@@ -347,9 +522,17 @@ const StatsCards = ({ userData, onAdjust }) => {
               trend={-1}
               onEditValue={(v, r) => setOverride('deudas', v, r)}
             />
+            <RecurringPaymentsCard
+              clients={clients}
+              transactions={transactions}
+              isLoading={loadingClients || loadingTx}
+              value={overrides['recurrentes']}
+              onEditValue={(v, r) => setOverride('recurrentes', v, r)}
+            />
           </View>
         </>
       ) : (
+
         // ─── Modo Comercial: tarjetas principales ───
         <>
           {/* Fila 1: Ingresado + Deudas */}
@@ -484,6 +667,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#F0F2F7',
+    alignSelf: 'flex-start',
   },
   footerText: {
     fontSize: 10,
@@ -493,7 +677,7 @@ const styles = StyleSheet.create({
   },
 });
 
-// ─── Estilos del modal (bottom-sheet) ───
+// ─── Estilos del modal de ajuste (bottom-sheet) ───
 const modalStyles = StyleSheet.create({
   overlay: {
     flex: 1,

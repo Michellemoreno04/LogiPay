@@ -36,7 +36,7 @@ export default function ShareTransactionCard({ transaction, clientName, innerRef
 
   if (!transaction) return null;
 
-  const isPayment = transaction.type === 'payment';
+  const isPayment = transaction.type === 'payment' || transaction.type === 'debt_payment' || transaction.type === 'recurring_payment';
   const isSale = transaction.type === 'sale';
 
   // Extraer items de factura si están presentes
@@ -59,9 +59,11 @@ export default function ShareTransactionCard({ transaction, clientName, innerRef
       ? 'Factura de Venta'
       : isSale
         ? 'Orden de Venta'
-        : isPayment
-          ? 'Comprobante de Pago'
-          : 'Comprobante de Transacción'
+        : transaction.type === 'recurring_payment'
+          ? 'Comprobante de Cuota'
+          : isPayment
+            ? 'Comprobante de Abono'
+            : 'Comprobante de Transacción'
   );
 
   const dateStr = formatDate(transaction.createdAt || transaction._date || transaction.date);

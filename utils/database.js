@@ -43,6 +43,8 @@ export const initDB = async () => {
       await database.execAsync(`
         CREATE TABLE IF NOT EXISTS user_data (
           uid TEXT PRIMARY KEY,
+          firstName TEXT DEFAULT '',
+          lastName TEXT DEFAULT '',
           businessName TEXT DEFAULT '',
           businessType TEXT DEFAULT 'commercial',
           businessAddress TEXT DEFAULT '',
@@ -169,13 +171,23 @@ export const initDB = async () => {
           console.log("[Migration] Added 'buyPrice' column to sales table.");
         }
 
-        // Migración para 'user_data' – agregar datos de facturación
+        // Migración para 'user_data' – agregar datos de facturación y nombres
         const userDataInfo = await database.getAllAsync("PRAGMA table_info(user_data)");
+        const hasFirstName = userDataInfo.some(col => col.name === 'firstName');
+        const hasLastName = userDataInfo.some(col => col.name === 'lastName');
         const hasAddress = userDataInfo.some(col => col.name === 'businessAddress');
         const hasPhone = userDataInfo.some(col => col.name === 'businessPhone');
         const hasRnc = userDataInfo.some(col => col.name === 'businessRnc');
         const hasFooter = userDataInfo.some(col => col.name === 'invoiceFooter');
 
+        if (!hasFirstName) {
+          await database.execAsync("ALTER TABLE user_data ADD COLUMN firstName TEXT DEFAULT ''");
+          console.log("[Migration] Added 'firstName' column to user_data table.");
+        }
+        if (!hasLastName) {
+          await database.execAsync("ALTER TABLE user_data ADD COLUMN lastName TEXT DEFAULT ''");
+          console.log("[Migration] Added 'lastName' column to user_data table.");
+        }
         if (!hasAddress) {
           await database.execAsync("ALTER TABLE user_data ADD COLUMN businessAddress TEXT DEFAULT ''");
         }
@@ -390,6 +402,20 @@ export const getAllTransactions = async (uid, limit = 200) => {
   }
 };
 
+export const getAllClientTransactions = async (uid) => {
+  try {
+    const database = await initDB();
+    return await database.getAllAsync(
+      'SELECT * FROM transactions WHERE uid = ? ORDER BY createdAt DESC',
+      [uid]
+    );
+  } catch (error) {
+    console.error('Error in getAllClientTransactions:', error);
+    return [];
+  }
+};
+
+
 export const getRecentTransactions = async (uid, limit = 5) => {
   try {
     const database = await initDB();
@@ -448,20 +474,25 @@ export const getRecentActivity = async (uid, limit = 8) => {
 export const saveUserData = async (uid, data) => {
   try {
     const database = await initDB();
+    const existing = await database.getFirstAsync('SELECT * FROM user_data WHERE uid = ?', [uid]);
+    const merged = { ...existing, ...data };
+
     await database.runAsync(
       `INSERT OR REPLACE INTO user_data
-       (uid, businessName, businessType, businessAddress, businessPhone, businessRnc, invoiceFooter, totalPayment, totalDebt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (uid, firstName, lastName, businessName, businessType, businessAddress, businessPhone, businessRnc, invoiceFooter, totalPayment, totalDebt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         uid,
-        data.businessName || '',
-        data.businessType || 'commercial',
-        data.businessAddress || '',
-        data.businessPhone || '',
-        data.businessRnc || '',
-        data.invoiceFooter ?? '¡Gracias por su compra!',
-        data.totalPayment ?? 0,
-        data.totalDebt ?? 0,
+        merged.firstName || '',
+        merged.lastName || '',
+        merged.businessName || '',
+        merged.businessType || 'commercial',
+        merged.businessAddress || '',
+        merged.businessPhone || '',
+        merged.businessRnc || '',
+        merged.invoiceFooter ?? '¡Gracias por su compra!',
+        merged.totalPayment ?? 0,
+        merged.totalDebt ?? 0,
         Date.now(),
       ]
     );

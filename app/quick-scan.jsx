@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useAudioPlayer } from 'expo-audio';
-import { Camera, useCameraDevice, useCameraPermission, useCodeScanner } from 'react-native-vision-camera';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -24,9 +23,10 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Camera, useCameraDevice, useCameraPermission, useCodeScanner } from 'react-native-vision-camera';
 import { useAuth } from '../authContext/authContext';
 import { useLocalData } from '../context/LocalDataContext';
-import { addBarcodeToProduct, recordSale, recordSaleOrder } from '../utils/productService';
+import { addBarcodeToProduct, recordSaleOrder } from '../utils/productService';
 
 export default function QuickScanScreen() {
   const insets = useSafeAreaInsets();
@@ -47,7 +47,7 @@ export default function QuickScanScreen() {
 
   // Escaner de códigos nativo de VisionCamera v5
   const codeScanner = useCodeScanner({
-    codeTypes: ['ean-13','ean-8','upc-a','upc-e','code-128','code-39','code-93','qr','pdf-417','aztec','data-matrix'],
+    codeTypes: ['ean-13', 'ean-8', 'upc-a', 'upc-e', 'code-128', 'code-39', 'code-93', 'qr', 'pdf-417', 'aztec', 'data-matrix'],
     onCodeScanned: (codes) => {
       codes.forEach((code) => {
         if (code.value) handleBarcodeScanned({ data: code.value });
@@ -116,7 +116,7 @@ export default function QuickScanScreen() {
       await cameraRef.current?.focus({ x: locationX, y: locationY });
     } catch (_) { /* Algunos dispositivos no soportan focus manual */ }
 
-    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch (_) {}
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch (_) { }
   }, [focusAnim]);
 
   // Función para mostrar notificación emergente por 1 segundo
@@ -1125,7 +1125,7 @@ export default function QuickScanScreen() {
 
             <View style={styles.modalBody}>
               {/* Seleccionar Cliente (Opcional) */}
-              <Text style={styles.fieldLabel}>Cliente (Opcional)</Text>
+              <Text style={styles.fieldLabel}>Cliente (Opcional) solo si es fiado</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
                 <TouchableOpacity
                   style={[styles.clientSelector, { flex: 1 }]}

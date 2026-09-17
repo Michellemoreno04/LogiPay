@@ -10,6 +10,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Linking,
+  Modal,
   Platform,
   ScrollView,
   StatusBar,
@@ -20,7 +21,7 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
-import { getAuth, signInWithEmailAndPassword } from '@react-native-firebase/auth';
+import { getAuth, signInWithEmailAndPassword, sendPasswordResetEmail } from '@react-native-firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebaseConfig/config';
 import { useAuth } from '../authContext/authContext';
@@ -32,7 +33,11 @@ export default function LoginScreen() {
   const { businessType, businessName } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [forgotModalVisible, setForgotModalVisible] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
 
   const gotToTerms = () => {
     const url = "https://docs.google.com/document/d/17LlGB0Y6MSfKoRVlKr0SbYyaG8UG8YdVAFO_VNn4Kbo/edit?usp=sharing"
@@ -52,7 +57,7 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(getAuth(), email, password);
+      const userCredential = await signInWithEmailAndPassword(getAuth(), email.trim(), password);
       const user = userCredential.user;
 
       if (businessType || businessName) {
@@ -67,7 +72,7 @@ export default function LoginScreen() {
       console.error("Error signing in", error);
       let errorMessage = "No se pudo iniciar sesión.";
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-        errorMessage = "Las credenciales son incorrectas o no están registradas. Por favor, verifica tus datos o regístrate.";
+        errorMessage = "Las credenciales son incorrectas o el correo no está registrado. Por favor, verifica tus datos o regístrate.";
       } else if (error.code === 'auth/invalid-email') {
         errorMessage = "El formato del correo es inválido.";
       }
@@ -75,6 +80,39 @@ export default function LoginScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetEmail || !resetEmail.trim()) {
+      Alert.alert("Error", "Por favor ingresa tu correo electrónico.");
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      await sendPasswordResetEmail(getAuth(), resetEmail.trim());
+      setForgotModalVisible(false);
+      Alert.alert(
+        "Correo enviado",
+        "Te hemos enviado un enlace para restablecer tu contraseña. Por favor revisa tu bandeja de entrada o la carpeta de spam."
+      );
+    } catch (error) {
+      console.error("Error sending reset password email", error);
+      let errorMessage = "No se pudo enviar el correo de recuperación.";
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = "No se encontró ninguna cuenta registrada con este correo.";
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "El formato del correo no es válido.";
+      }
+      Alert.alert("Error", errorMessage);
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const openForgotPasswordModal = () => {
+    setResetEmail(email.trim());
+    setForgotModalVisible(true);
   };
 
   return (
@@ -134,9 +172,28 @@ export default function LoginScreen() {
                   placeholderTextColor="#8E8E93"
                   value={password}
                   onChangeText={setPassword}
-                  secureTextEntry
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
                 />
+                <TouchableOpacity
+                  style={styles.eyeIconBtn}
+                  onPress={() => setShowPassword(!showPassword)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color="#8E8E93"
+                  />
+                </TouchableOpacity>
               </View>
+
+              <TouchableOpacity
+                style={styles.forgotPasswordContainer}
+                onPress={openForgotPasswordModal}
+              >
+                <Text style={styles.forgotPasswordText}>¿Olvidaste tu contraseña?</Text>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.loginButton}
@@ -170,6 +227,70 @@ export default function LoginScreen() {
 
         </ScrollView>
       </TouchableWithoutFeedback>
+
+      {/* Modal para Recuperar Contraseña */}
+      <Modal
+        visible={forgotModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setForgotModalVisible(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalIconBadge}>
+                  <Ionicons name="key-outline" size={28} color="#4C669F" />
+                </View>
+
+                <Text style={styles.modalTitle}>Recuperar Contraseña</Text>
+                <Text style={styles.modalSubtitle}>
+                  Ingresa tu correo electrónico registrado y te enviaremos un enlace para restablecerla.
+                </Text>
+
+                <View style={styles.modalInputContainer}>
+                  <Ionicons name="mail-outline" size={20} color="#8E8E93" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Correo electrónico"
+                    placeholderTextColor="#8E8E93"
+                    value={resetEmail}
+                    onChangeText={setResetEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    autoFocus
+                  />
+                </View>
+
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={styles.modalCancelButton}
+                    onPress={() => setForgotModalVisible(false)}
+                    disabled={resetLoading}
+                  >
+                    <Text style={styles.modalCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.modalSubmitButton}
+                    onPress={handleResetPassword}
+                    disabled={resetLoading}
+                  >
+                    {resetLoading ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.modalSubmitText}>Enviar</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -283,6 +404,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1C1C1E',
   },
+  eyeIconBtn: {
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  forgotPasswordContainer: {
+    alignSelf: 'flex-end',
+    marginBottom: 16,
+    marginTop: -4,
+    paddingVertical: 4,
+  },
+  forgotPasswordText: {
+    color: '#4C669F',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   loginButton: {
     backgroundColor: '#4C669F',
     height: 56,
@@ -329,5 +466,99 @@ const styles = StyleSheet.create({
   linkText: {
     color: '#4C669F',
     fontWeight: '600',
-  }
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalBackdrop: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 380,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalIconBadge: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1C1C1E',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#636366',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  modalInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    marginBottom: 24,
+    paddingHorizontal: 16,
+    width: '100%',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  modalCancelButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+  },
+  modalCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#636366',
+  },
+  modalSubmitButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#4C669F',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalSubmitText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: 'white',
+  },
 });

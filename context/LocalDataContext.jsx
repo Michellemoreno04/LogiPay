@@ -13,6 +13,7 @@ import { db as firestore } from '../firebaseConfig/config';
 import { bootstrapFromFirebase } from '../utils/bootstrapSync';
 import {
   getClients,
+  getPendingOutbox,
   getProducts,
   getRecentActivity,
   getRecentSales,
@@ -41,12 +42,12 @@ export function LocalDataProvider({ children }) {
 
   // Para compatibilidad con [id].jsx y all-transactions.jsx
   const pendingOpsRef = useRef({
-    deletedTxIds: new Set(),
-    updatedTxs: {},
     addedTxs: {},
+    updatedTxs: {},
+    deletedTxIds: new Set(),
   });
 
-  // ─── Inicializar DB al montar ───
+  // ─── Inicializar SQLite y sincronizar outbox al abrir la app ───
   useEffect(() => {
     initDB().then(() => syncOutbox()).catch(console.error);
   }, []);
@@ -95,10 +96,20 @@ export function LocalDataProvider({ children }) {
         const q = query(collection(firestore, 'users', user.uid, 'clients'));
         unsubscribe = onSnapshot(
           q,
+          { includeMetadataChanges: true },
           async (snap) => {
             if (!isMounted) return;
-            // Sincronizar cada cliente de Firebase a SQLite
+            // Si el snapshot viene del caché de Firestore sin conexión, no sobreescribir SQLite
+            if (snap.metadata?.fromCache) return;
+
+            const pending = await getPendingOutbox();
+            const pendingClientIds = new Set(
+              pending.filter((p) => p.collection.includes('clients')).map((p) => p.docId)
+            );
+
+            // Sincronizar cada cliente de Firebase a SQLite si no hay outbox pendiente
             for (const docSnap of snap.docs) {
+              if (pendingClientIds.has(docSnap.id)) continue;
               const data = { id: docSnap.id, ...docSnap.data() };
               if (data.createdAt?.toMillis) data.createdAt = data.createdAt.toMillis();
               await insertClient(user.uid, data);
@@ -178,11 +189,23 @@ export function LocalDataProvider({ children }) {
       }
     };
 
+    const loadClients = async () => {
+      const localClients = await getClients(user.uid);
+      if (isMounted) {
+        setClientsState(localClients);
+      }
+    };
+
     loadRecent();
 
-    // Escuchar evento de cambio local para refrescar actividad reciente
+    // Escuchar evento de cambio local para refrescar actividad reciente y clientes desde SQLite
+    const handleLocalDbChanged = async () => {
+      loadRecent();
+      loadClients();
+    };
+
     const { DeviceEventEmitter } = require('react-native');
-    const sub = DeviceEventEmitter.addListener('local-db-changed', loadRecent);
+    const sub = DeviceEventEmitter.addListener('local-db-changed', handleLocalDbChanged);
 
     return () => {
       isMounted = false;
@@ -302,10 +325,12 @@ export function LocalDataProvider({ children }) {
 
     // Actualizar balance del cliente en memoria si hay cliente
     if (clientId) {
-      const balanceChange = type === 'payment' ? amount : -amount;
-      setClientsState((prev) =>
-        prev.map((c) => c.id === clientId ? { ...c, balance: (c.balance || 0) + balanceChange } : c)
-      );
+      const balanceChange = (type === 'payment' || type === 'debt_payment') ? amount : (type === 'recurring_payment' ? 0 : -amount);
+      if (balanceChange !== 0) {
+        setClientsState((prev) =>
+          prev.map((c) => c.id === clientId ? { ...c, balance: (c.balance || 0) + balanceChange } : c)
+        );
+      }
     }
 
     pendingOpsRef.current.addedTxs[newTx.id] = newTx;
@@ -320,13 +345,17 @@ export function LocalDataProvider({ children }) {
   const editTransactionOptimistic = useCallback(async ({
     txId, clientId, oldType, oldAmount, newType, newAmount, newTitle, newDescription,
   }) => {
-    const oldBalanceChange = oldType === 'payment' ? -oldAmount : oldAmount;
-    const newBalanceChange = newType === 'payment' ? newAmount : -newAmount;
+    const isPay = (t) => t === 'payment' || t === 'debt_payment';
+    const isRec = (t) => t === 'recurring_payment';
+    const oldBalanceChange = isRec(oldType) ? 0 : isPay(oldType) ? -oldAmount : oldAmount;
+    const newBalanceChange = isRec(newType) ? 0 : isPay(newType) ? newAmount : -newAmount;
     const netChange = oldBalanceChange + newBalanceChange;
 
-    setClientsState((prev) =>
-      prev.map((c) => c.id === clientId ? { ...c, balance: (c.balance || 0) + netChange } : c)
-    );
+    if (netChange !== 0) {
+      setClientsState((prev) =>
+        prev.map((c) => c.id === clientId ? { ...c, balance: (c.balance || 0) + netChange } : c)
+      );
+    }
 
     const updatedTx = { id: txId, type: newType, amount: newAmount, title: newTitle, description: newDescription };
     pendingOpsRef.current.updatedTxs[txId] = updatedTx;
@@ -340,10 +369,14 @@ export function LocalDataProvider({ children }) {
    * Elimina una transacción localmente (en memoria).
    */
   const deleteTransactionOptimistic = useCallback(async ({ txId, clientId, type, amount }) => {
-    const balanceChange = type === 'payment' ? -amount : amount;
-    setClientsState((prev) =>
-      prev.map((c) => c.id === clientId ? { ...c, balance: (c.balance || 0) + balanceChange } : c)
-    );
+    const isPay = type === 'payment' || type === 'debt_payment';
+    const isRec = type === 'recurring_payment';
+    const balanceChange = isRec ? 0 : isPay ? -amount : amount;
+    if (balanceChange !== 0) {
+      setClientsState((prev) =>
+        prev.map((c) => c.id === clientId ? { ...c, balance: (c.balance || 0) + balanceChange } : c)
+      );
+    }
 
     pendingOpsRef.current.deletedTxIds.add(txId);
     setRecentActivityState((prev) => prev.filter((tx) => tx.id !== txId));

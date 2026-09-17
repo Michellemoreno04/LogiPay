@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -32,7 +31,7 @@ export default function AddUserScreen() {
   const [phone, setPhone] = useState(params.phone || '');
   const [email, setEmail] = useState(params.email || '');
   const [initialBalance, setInitialBalance] = useState('');
-  const [transactionType, setTransactionType] = useState('debt'); // 'payment' | 'debt'
+  const transactionType = 'debt'; // Solo se registran deudas al crear un cliente
   const [balanceDescription, setBalanceDescription] = useState('Saldo inicial');
 
   const handleSave = async () => {
@@ -158,49 +157,29 @@ export default function AddUserScreen() {
         {!isEditing && (
           <>
             <View style={styles.formGroup}>
-              <Text style={styles.label}>Tipo de Saldo Inicial</Text>
-          <View style={styles.typeSelector}>
-            <TouchableOpacity
-              style={[styles.typeButton, transactionType === 'payment' && styles.typeButtonActivePayment]}
-              onPress={() => setTransactionType('payment')}
-            >
-              <Ionicons name="arrow-down-circle" size={22} color={transactionType === 'payment' ? 'white' : '#34C759'} />
-              <Text style={[styles.typeButtonText, transactionType === 'payment' && styles.typeButtonTextActive]}>Abono</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.typeButton, transactionType === 'debt' && styles.typeButtonActiveDebt]}
-              onPress={() => setTransactionType('debt')}
-            >
-              <Ionicons name="arrow-up-circle" size={22} color={transactionType === 'debt' ? 'white' : '#FF3B30'} />
-              <Text style={[styles.typeButtonText, transactionType === 'debt' && styles.typeButtonTextActive]}>Deuda</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+              <Text style={styles.label}>Deuda Inicial</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ej. 0.00"
+                placeholderTextColor="#8E8E93"
+                value={initialBalance}
+                onChangeText={(text) => setInitialBalance(formatNumber(text))}
+                keyboardType="decimal-pad"
+              />
+            </View>
 
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>{transactionType === 'payment' ? 'Abono Inicial' : 'Deuda Inicial'}</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ej. 0.00"
-            placeholderTextColor="#8E8E93"
-            value={initialBalance}
-            onChangeText={(text) => setInitialBalance(formatNumber(text))}
-            keyboardType="decimal-pad"
-          />
-        </View>
-
-        {initialBalance ? (
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Concepto del Saldo Inicial</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej. Primer Saldo, pago numero 1..."
-              placeholderTextColor="#8E8E93"
-              value={balanceDescription}
-              onChangeText={setBalanceDescription}
-              autoCapitalize="sentences"
-            />
-          </View>
+            {initialBalance ? (
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Concepto del Saldo Inicial</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ej. Primer Saldo, pago numero 1..."
+                  placeholderTextColor="#8E8E93"
+                  value={balanceDescription}
+                  onChangeText={setBalanceDescription}
+                  autoCapitalize="sentences"
+                />
+              </View>
             ) : null}
           </>
         )}

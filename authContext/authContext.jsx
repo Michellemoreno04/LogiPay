@@ -1,10 +1,11 @@
 import { getAuth, onAuthStateChanged, signOut } from '@react-native-firebase/auth';
 import { useRouter } from 'expo-router';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import { db } from '../firebaseConfig/config';
-import { getUserData, saveUserData } from '../utils/database';
+import { addToOutbox, getPendingOutbox, getUserData, saveUserData } from '../utils/database';
+import { syncOutbox } from '../utils/syncEngine';
 
 const AuthContext = createContext({});
 
@@ -49,7 +50,24 @@ export default function AuthProvider({ children }) {
         const userRef = doc(db, 'users', currentUser.uid);
         unsubscribeUserDoc = onSnapshot(
           userRef,
+          { includeMetadataChanges: true },
           async (snap) => {
+            if (snap.metadata?.fromCache) return;
+
+            // Verificar si hay operaciones pendientes en outbox para este usuario
+            try {
+              const pending = await getPendingOutbox();
+              const hasPendingUserUpdates = pending.some(
+                (p) => p.collection === 'users' && p.docId === currentUser.uid
+              );
+              if (hasPendingUserUpdates) {
+                // No sobreescribir con datos antiguos de Firebase si hay cambios pendientes
+                return;
+              }
+            } catch (e) {
+              console.warn('[auth] Error checking outbox in snapshot:', e);
+            }
+
             if (snap.exists()) {
               const firebaseData = snap.data();
               // Guardar en SQLite para acceso offline
@@ -110,14 +128,17 @@ export default function AuthProvider({ children }) {
   const updateUserData = async (newData) => {
     if (!user) return;
     try {
-      // 1. Guardar en SQLite de inmediato
+      // 1. Guardar en SQLite de inmediato (offline-first)
       const current = await getUserData(user.uid);
-      await saveUserData(user.uid, { ...current, ...newData });
+      const updated = { ...current, ...newData };
+      await saveUserData(user.uid, updated);
       setUserData((prev) => ({ ...prev, ...newData }));
 
-      // 2. Sincronizar con Firebase
-      const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, newData, { merge: true });
+      // 2. Encolar en outbox para sincronizar con Firebase
+      await addToOutbox('users', user.uid, newData, 'set');
+
+      // 3. Intentar sincronizar en background si hay conexión
+      syncOutbox().catch((err) => console.warn('[auth] syncOutbox error:', err));
     } catch (error) {
       console.error('Error updating user data:', error);
       throw error;

@@ -67,13 +67,13 @@ export default function RegisterScreen() {
 
     setLoading(true);
     try {
-      const userCredential = await createUserWithEmailAndPassword(getAuth(), email, password);
+      const userCredential = await createUserWithEmailAndPassword(getAuth(), email.trim(), password);
       const user = userCredential.user;
 
       await setDoc(doc(db, "users", user.uid), {
-        firstName,
-        lastName,
-        email,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim().toLowerCase(),
         createdAt: new Date(),
         uid: user.uid,
         businessType: businessType || null,
@@ -82,11 +82,12 @@ export default function RegisterScreen() {
         totalDebt: totalDebt
       });
 
+      router.replace("/business-type");
     } catch (error) {
       console.error("Error signing up", error);
       let errorMessage = "No se pudo crear la cuenta.";
       if (error.code === 'auth/email-already-in-use') {
-        errorMessage = "El correo ya está en uso por otra cuenta.";
+        errorMessage = "Este correo electrónico ya está en uso. Por favor, inicia sesión o usa un correo diferente.";
       } else if (error.code === 'auth/invalid-email') {
         errorMessage = "El formato del correo es inválido.";
       } else if (error.code === 'auth/weak-password') {
@@ -95,7 +96,6 @@ export default function RegisterScreen() {
       Alert.alert("Error de Registro", errorMessage);
     } finally {
       setLoading(false);
-      router.replace("/business-type");
     }
   };
 

@@ -249,7 +249,7 @@ export default function AllTransactionsScreen() {
     }
 
     const isSale = item.type === 'sale';
-    const isPayment = item.type === 'payment';
+    const isPayment = item.type === 'payment' || item.type === 'debt_payment' || item.type === 'recurring_payment';
 
     const palette = isInvoice
       ? { bg: '#FFF8EC', icon: '#FF9500', text: '#FF9500' }
@@ -265,7 +265,15 @@ export default function AllTransactionsScreen() {
       ? 'cart'
       : isPayment ? 'add-circle' : 'remove-circle';
 
-    const badgeLabel = isInvoice ? 'Factura' : isSale ? 'Venta' : isPayment ? 'Abono' : 'Cargo';
+    const badgeLabel = isInvoice
+      ? 'Factura'
+      : isSale
+      ? 'Venta'
+      : item.type === 'recurring_payment'
+      ? 'Cuota'
+      : isPayment
+      ? 'Abono'
+      : 'Cargo';
     const amountPrefix = (isSale || !item.clientId) ? '' : isPayment ? '+' : '-';
 
     const title = item.clientName || (item.clientId ? 'Sin nombre' : 'Venta al contado');
@@ -556,7 +564,7 @@ export default function AllTransactionsScreen() {
 
               const isInvoice = Boolean(parsedInvoice);
               const isSale = selectedTx.type === 'sale';
-              const isPayment = selectedTx.type === 'payment';
+              const isPayment = selectedTx.type === 'payment' || selectedTx.type === 'debt_payment' || selectedTx.type === 'recurring_payment';
 
               const palette = isInvoice || isSale
                 ? { bg: '#FFF8EC', icon: '#FF9500', text: '#FF9500' }

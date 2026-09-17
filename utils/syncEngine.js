@@ -46,7 +46,7 @@ export const syncOutbox = async () => {
         switch (item.operation) {
           case 'set':
             docRef = doc(db, item.collection, item.docId);
-            await setDoc(docRef, data);
+            await setDoc(docRef, data, { merge: true });
             break;
           case 'add':
             const colRef = collection(db, item.collection);

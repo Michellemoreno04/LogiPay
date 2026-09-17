@@ -1,5 +1,4 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Camera, useCameraDevice, useCameraPermission, useCodeScanner } from 'react-native-vision-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -22,6 +21,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Camera, useCameraDevice, useCameraPermission, useCodeScanner } from 'react-native-vision-camera';
 import { useAuth } from '../authContext/authContext';
 import { useLocalData } from '../context/LocalDataContext';
 import {
@@ -70,7 +70,7 @@ export default function AddProductScreen() {
   const device = useCameraDevice('back');
 
   const codeScanner = useCodeScanner({
-    codeTypes: ['ean-13','ean-8','upc-a','upc-e','code-128','code-39','code-93','qr','pdf-417','aztec','data-matrix'],
+    codeTypes: ['ean-13', 'ean-8', 'upc-a', 'upc-e', 'code-128', 'code-39', 'code-93', 'qr', 'pdf-417', 'aztec', 'data-matrix'],
     onCodeScanned: (codes) => {
       if (scanned) return;
       const first = codes[0];

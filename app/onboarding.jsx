@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   Dimensions,
   FlatList,
@@ -116,20 +116,17 @@ export default function OnboardingScreen() {
           colors={['rgba(0,0,0,0.4)', 'rgba(0,0,0,0.1)', '#F8F9FA']}
           style={StyleSheet.absoluteFill}
         />
-        
+
         {/* Top Bar inside hero */}
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={24} color="white" />
-          </TouchableOpacity>
           <TouchableOpacity onPress={handleSkip} style={styles.skipBtn}>
             <Text style={styles.skipText}>Saltar</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.welcomeContainer}>
-           <Text style={styles.welcomeText}>Bienvenido a</Text>
-           <Text style={styles.brandText}>LogiPay</Text>
+          <Text style={styles.welcomeText}>Bienvenido a</Text>
+          <Text style={styles.brandText}>LogiPay</Text>
         </View>
       </View>
 
@@ -179,10 +176,10 @@ export default function OnboardingScreen() {
             <Text style={styles.ctaText}>
               {isLastSlide ? '¡Comenzar ahora!' : 'Siguiente'}
             </Text>
-            <Ionicons 
-              name={isLastSlide ? "rocket-outline" : "arrow-forward"} 
-              size={20} 
-              color="white" 
+            <Ionicons
+              name={isLastSlide ? "rocket-outline" : "arrow-forward"}
+              size={20}
+              color="white"
             />
           </LinearGradient>
         </TouchableOpacity>
@@ -211,17 +208,9 @@ const styles = StyleSheet.create({
     top: Platform.OS === 'ios' ? 50 : 40,
     width: '100%',
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     paddingHorizontal: 20,
     zIndex: 10,
-  },
-  backBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   skipBtn: {
     paddingHorizontal: 16,
@@ -266,10 +255,10 @@ const styles = StyleSheet.create({
     paddingTop: 30,
     paddingBottom: Platform.OS === 'ios' ? 40 : 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -5 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 20,
+    shadowOffset: { width: 0, height: -85 },
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
+    elevation: 85,
   },
   flatList: {
     flex: 1,

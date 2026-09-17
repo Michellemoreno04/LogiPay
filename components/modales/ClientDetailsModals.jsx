@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -15,7 +16,6 @@ import {
   View,
 } from 'react-native';
 import ViewShot from 'react-native-view-shot';
-import { router } from 'expo-router';
 import ShareTransactionCard from '../ShareTransactionCard';
 
 // ─── Helpers de formato ──────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ export default function ClientDetailsModals({
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.modalTitle} numberOfLines={1}>
-                  {editingTransactionId ? 'Editar Transacción' : (transactionType === 'payment' ? 'Abonar Pago' : 'Agregar Deuda')}
+                  {editingTransactionId ? 'Editar Transacción' : (transactionType === 'debt' ? 'Agregar Deuda' : 'Abonar a Deuda')}
                 </Text>
                 <View style={{ flex: 1, alignItems: 'flex-end' }} />
               </View>
@@ -128,23 +128,25 @@ export default function ClientDetailsModals({
                 <Text style={styles.clientChipText}>{client?.name}</Text>
               </View>
 
-              {/* Selector de tipo */}
-              <View style={styles.typeSelector}>
-                <TouchableOpacity
-                  style={[styles.typeButton, transactionType === 'payment' && styles.typeButtonActivePayment]}
-                  onPress={() => setTransactionType('payment')}
-                >
-                  <Ionicons name="arrow-down-circle" size={22} color={transactionType === 'payment' ? 'white' : '#34C759'} />
-                  <Text style={[styles.typeButtonText, transactionType === 'payment' && styles.typeButtonTextActive]}>Pago</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.typeButton, transactionType === 'debt' && styles.typeButtonActiveDebt]}
-                  onPress={() => setTransactionType('debt')}
-                >
-                  <Ionicons name="arrow-up-circle" size={22} color={transactionType === 'debt' ? 'white' : '#FF3B30'} />
-                  <Text style={[styles.typeButtonText, transactionType === 'debt' && styles.typeButtonTextActive]}>Deuda</Text>
-                </TouchableOpacity>
-              </View>
+              {/* Selector de tipo: solo visible al editar una transacción existente */}
+              {editingTransactionId && (
+                <View style={styles.typeSelector}>
+                  <TouchableOpacity
+                    style={[styles.typeButton, (transactionType === 'payment' || transactionType === 'debt_payment') && styles.typeButtonActivePayment]}
+                    onPress={() => setTransactionType(transactionType === 'payment' ? 'payment' : 'debt_payment')}
+                  >
+                    <Ionicons name="arrow-down-circle" size={22} color={(transactionType === 'payment' || transactionType === 'debt_payment') ? 'white' : '#34C759'} />
+                    <Text style={[styles.typeButtonText, (transactionType === 'payment' || transactionType === 'debt_payment') && styles.typeButtonTextActive]}>Abono</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.typeButton, transactionType === 'debt' && styles.typeButtonActiveDebt]}
+                    onPress={() => setTransactionType('debt')}
+                  >
+                    <Ionicons name="arrow-up-circle" size={22} color={transactionType === 'debt' ? 'white' : '#FF3B30'} />
+                    <Text style={[styles.typeButtonText, transactionType === 'debt' && styles.typeButtonTextActive]}>Deuda</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {/* Monto */}
               <Text style={styles.inputLabel}>Monto *</Text>
@@ -165,7 +167,7 @@ export default function ClientDetailsModals({
               <Text style={styles.inputLabel}>Título *</Text>
               <TextInput
                 style={styles.titleInput}
-                placeholder={transactionType === 'payment' ? 'Ej. Abono a cuenta...' : 'Ej. Préstamo de material...'}
+                placeholder={(transactionType === 'payment' || transactionType === 'debt_payment') ? 'Ej. Abono a cuenta...' : 'Ej. Préstamo de material...'}
                 placeholderTextColor="#C7C7CC"
                 value={title}
                 onChangeText={setTitle}
@@ -187,7 +189,7 @@ export default function ClientDetailsModals({
                 style={[
                   styles.saveButton,
                   (!amount || !title.trim() || saving) && styles.saveButtonDisabled,
-                  transactionType === 'payment' ? styles.savePaymentTheme : styles.saveDebtTheme,
+                  transactionType === 'debt' ? styles.saveDebtTheme : styles.savePaymentTheme,
                 ]}
                 onPress={handleSaveTransaction}
                 disabled={saving}
@@ -232,10 +234,10 @@ export default function ClientDetailsModals({
 
             <View style={styles.optionDivider} />
 
-            <TouchableOpacity style={styles.optionItem} onPress={handleDeleteClient}>
+            {/* <TouchableOpacity style={styles.optionItem} onPress={handleDeleteClient}>
               <Ionicons name="trash-outline" size={22} color="#FF3B30" />
               <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar cliente</Text>
-            </TouchableOpacity>
+            </TouchableOpacity> */}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -257,17 +259,17 @@ export default function ClientDetailsModals({
                   if (p && p.isInvoice && Array.isArray(p.items)) {
                     parsedInvoice = p;
                   }
-                } catch (e) {}
+                } catch (e) { }
               }
 
-              const isPayment = selectedTransaction.type === 'payment';
+              const isPayment = selectedTransaction.type === 'payment' || selectedTransaction.type === 'debt_payment' || selectedTransaction.type === 'recurring_payment';
               const isInvoice = Boolean(parsedInvoice);
 
               const iconName = isInvoice
                 ? 'receipt-outline'
                 : isPayment
-                ? 'arrow-down-circle'
-                : 'arrow-up-circle';
+                  ? 'arrow-down-circle'
+                  : 'arrow-up-circle';
               const iconColor = isInvoice ? '#2D8C5A' : isPayment ? '#34C759' : '#FF3B30';
               const iconBg = isInvoice ? '#E8F5EE' : isPayment ? '#E8F9EE' : '#FDECEA';
 
@@ -455,7 +457,7 @@ export default function ClientDetailsModals({
               <TouchableOpacity
                 style={[
                   styles.shareConfirmBtn,
-                  sharingTx?.type === 'payment' ? styles.shareConfirmPayment : styles.shareConfirmDebt,
+                  (sharingTx?.type === 'payment' || sharingTx?.type === 'debt_payment' || sharingTx?.type === 'recurring_payment') ? styles.shareConfirmPayment : styles.shareConfirmDebt,
                 ]}
                 onPress={handleShare}
                 disabled={isCapturing}

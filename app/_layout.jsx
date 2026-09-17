@@ -98,6 +98,7 @@ function RootLayoutNav() {
         <Stack.Screen name="product/[productId]" options={{ headerShown: false }} />
         <Stack.Screen name="add-product" options={{ headerShown: false }} />
         <Stack.Screen name="quick-scan" options={{ headerShown: false }} />
+        <Stack.Screen name="recurring-payments" options={{ headerShown: false }} />
 
       </Stack>
     </>

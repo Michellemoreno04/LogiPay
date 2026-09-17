@@ -78,10 +78,18 @@ export default function ActivityItem({ item }) {
     } catch (e) {}
   }
 
-  let isPayment = item.type === 'payment';
+  let isPayment = item.type === 'payment' || item.type === 'debt_payment' || item.type === 'recurring_payment';
   const isSale = item.type === 'sale';
 
-  let badgeLabel = isInvoice ? 'Factura' : isSale ? 'Venta' : isPayment ? 'Abono' : 'Cargo';
+  let badgeLabel = isInvoice
+    ? 'Factura'
+    : isSale
+    ? 'Venta'
+    : item.type === 'recurring_payment'
+    ? 'Cuota'
+    : isPayment
+    ? 'Abono'
+    : 'Cargo';
   let amountPrefix = (isSale || !item.clientId) ? '' : isPayment ? '+' : '-';
 
   if (item.clientId === 'global') {
@@ -218,8 +226,8 @@ export default function ActivityItem({ item }) {
                   {item.title || item.description || 'Transacción'}
                 </Text>
               </View>
-              <Text style={styles.optionsHeaderAmount}>
-                ${numberFormatter.format(item.amount)}
+              <Text style={[styles.optionsHeaderAmount, { color: palette.text }]}>
+                {amountPrefix}${numberFormatter.format(item.amount)}
               </Text>
             </View>
 
@@ -425,7 +433,7 @@ export default function ActivityItem({ item }) {
               <View style={styles.simpleDetailBox}>
                 <Text style={styles.detailLabel}>Monto de la transacción</Text>
                 <Text style={[styles.detailAmountText, { color: palette.text }]}>
-                  ${numberFormatter.format(item.amount)}
+                  {amountPrefix}${numberFormatter.format(item.amount)}
                 </Text>
                 {item.description && item.description !== item.title && (
                   <View style={{ marginTop: 12, width: '100%' }}>

@@ -343,6 +343,35 @@ function HomeScreenContent() {
           </TourZone>
         </View>
 
+        {/* ─── Botón Registrar Pago de Usuario (Modo Organización) ─── */}
+        {userData?.businessType === 'organization' && (
+          <View style={styles.orgActionContainer}>
+            <TouchableOpacity
+              style={styles.orgActionCard}
+              onPress={() => router.push('/recurring-payments')}
+              activeOpacity={0.88}
+            >
+              <LinearGradient
+                colors={['#1A1F4B', '#2563EB']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.orgActionGradient}
+              >
+                <View style={styles.orgActionIconWrap}>
+                  <Ionicons name="card-outline" size={22} color="#FFFFFF" />
+                </View>
+                <View style={styles.orgActionTextWrap}>
+                  <Text style={styles.orgActionTitle}>Registrar Pago de Usuario</Text>
+                  <Text style={styles.orgActionSubtitle}>
+                    Control y cobro de cuotas mensuales
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color="#FFFFFF" opacity={0.8} />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* ─── Recent Activity ─── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -565,6 +594,51 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 10,
     elevation: 3,
+  },
+
+  // ─── Org Action Banner ───
+  orgActionContainer: {
+    paddingHorizontal: 16,
+    marginTop: 10,
+  },
+  orgActionCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#1A1F4B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  orgActionGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  orgActionIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  orgActionTextWrap: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  orgActionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  orgActionSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontWeight: '500',
+    marginTop: 2,
   },
 
   // ─── Section ───
