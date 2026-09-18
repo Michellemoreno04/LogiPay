@@ -60,7 +60,8 @@ function HomeScreenContent() {
   const filteredActivity = useMemo(() => {
     const now = new Date();
     return recentActivity.filter((item) => {
-      const d = item.createdAt ? new Date(item.createdAt) : null;
+      const itemTs = item.createdAt || item._timestamp || (item._date ? new Date(item._date).getTime() : null);
+      const d = itemTs ? new Date(itemTs) : null;
       if (!d) return activityFilter === 'all';
       if (activityFilter === 'today') {
         return d.getFullYear() === now.getFullYear() &&

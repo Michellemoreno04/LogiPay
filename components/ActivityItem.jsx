@@ -69,7 +69,7 @@ export default function ActivityItem({ item }) {
 
   if (rawDesc) {
     try {
-      const parsed = JSON.parse(rawDesc);
+      const parsed = typeof rawDesc === 'string' ? JSON.parse(rawDesc) : rawDesc;
       if (parsed && parsed.isInvoice && Array.isArray(parsed.items)) {
         isInvoice = true;
         parsedInvoice = parsed;

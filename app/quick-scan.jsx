@@ -481,11 +481,12 @@ export default function QuickScanScreen() {
         addTransactionOptimistic({
           txId: orderResult.txId,
           clientId: targetClientId,
-          clientName: targetClientName,
+          clientName: targetClientName || (targetClientId ? 'Sin nombre' : 'Venta al contado'),
           type: targetClientId ? 'debt' : 'sale',
           amount: orderResult.totalOrderAmount,
           title: txTitle,
-          description: txDescription,
+          description: txTitle,
+          rawDescription: txDescription,
         });
 
         if (targetClientId && updateLocalUserData) {

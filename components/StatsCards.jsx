@@ -501,9 +501,27 @@ const StatsCards = ({ userData, onAdjust }) => {
     let ventasAmount = 0;
     for (const s of todaySalesFiltered) {
       ventasAmount += s.totalAmount ?? 0;
-      const buyP = s.buyPrice ?? 0;
-      const profit = ((s.unitPrice ?? 0) - buyP) * (s.quantity ?? 1);
-      ganancia += profit;
+      
+      // Buscar buyPrice en la venta o en el catálogo de productos
+      let itemBuyPrice = s.buyPrice;
+      if (itemBuyPrice === undefined || itemBuyPrice === null || itemBuyPrice === '') {
+        const prod = products.find((p) => p.id === s.productId);
+        itemBuyPrice = prod?.buyPrice;
+      }
+
+      // Solo sumar ganancia si el precio de compra fue especificado (> 0 y no vacío/null)
+      const hasBuyPrice =
+        itemBuyPrice !== undefined &&
+        itemBuyPrice !== null &&
+        itemBuyPrice !== '' &&
+        !isNaN(parseFloat(itemBuyPrice)) &&
+        parseFloat(itemBuyPrice) > 0;
+
+      if (hasBuyPrice) {
+        const buyP = parseFloat(itemBuyPrice);
+        const profit = ((s.unitPrice ?? 0) - buyP) * (s.quantity ?? 1);
+        ganancia += profit;
+      }
     }
     return { gananciaVentas: ganancia, totalVentasAmount: ventasAmount, totalVentas: todaySalesFiltered.length, productosRegistrados: products.length };
   }, [todaySalesFiltered, products]);

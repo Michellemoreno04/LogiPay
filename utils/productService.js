@@ -37,6 +37,7 @@ export const createProduct = async ({ uid, name, price, description, stock, barc
   const now = Date.now();
   // Si hay un barcode principal, lo incluimos también en el array barcodes
   const barcodesArr = barcode ? [barcode] : [];
+  const normalizedBuyPrice = (buyPrice !== '' && buyPrice !== null && buyPrice !== undefined && !isNaN(parseFloat(buyPrice))) ? parseFloat(buyPrice) : null;
 
   await insertProduct(uid, {
     id: productId,
@@ -46,7 +47,7 @@ export const createProduct = async ({ uid, name, price, description, stock, barc
     stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
     barcode: barcode || '',
     barcodes: barcodesArr,
-    buyPrice: parseFloat(buyPrice) || 0,
+    buyPrice: normalizedBuyPrice,
     category: category || '',
     photoUri: photoUri || '',
     createdAt: now,
@@ -59,7 +60,7 @@ export const createProduct = async ({ uid, name, price, description, stock, barc
     stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
     barcode: barcode || '',
     barcodes: barcodesArr,
-    buyPrice: parseFloat(buyPrice) || 0,
+    buyPrice: normalizedBuyPrice,
     category: category || '',
     photoUri: photoUri || '',
     createdAt: 'SERVER_TIMESTAMP',
@@ -80,6 +81,7 @@ export const editProduct = async ({ uid, productId, name, price, description, st
     try { barcodesArr = JSON.parse(barcodes); } catch { barcodesArr = []; }
   }
   const barcodesJson = JSON.stringify(barcodesArr);
+  const normalizedBuyPrice = (buyPrice !== '' && buyPrice !== null && buyPrice !== undefined && !isNaN(parseFloat(buyPrice))) ? parseFloat(buyPrice) : null;
 
   const changes = {
     name,
@@ -88,7 +90,7 @@ export const editProduct = async ({ uid, productId, name, price, description, st
     stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
     barcode: barcode || '',
     barcodes: barcodesJson,
-    buyPrice: parseFloat(buyPrice) || 0,
+    buyPrice: normalizedBuyPrice,
     category: category || '',
     photoUri: photoUri || '',
   };
@@ -186,7 +188,9 @@ export const recordSale = async ({ uid, productId, productName, clientId, client
 
   // Leer el precio de compra del producto para calcular ganancia
   const productForBuyPrice = await getProductById(uid, productId);
-  const parsedBuyPrice = parseFloat(productForBuyPrice?.buyPrice) || 0;
+  const rawBuyPrice = productForBuyPrice?.buyPrice;
+  const hasBuyPrice = rawBuyPrice !== undefined && rawBuyPrice !== null && rawBuyPrice !== '' && !isNaN(parseFloat(rawBuyPrice));
+  const parsedBuyPrice = hasBuyPrice ? parseFloat(rawBuyPrice) : null;
 
   // 1. Guardar venta en SQLite
   await insertSale(uid, {
@@ -359,7 +363,9 @@ export const recordSaleOrder = async ({ uid, clientId, clientName, items }) => {
     const saleId = doc(salesRef).id;
 
     const productForBuyPrice = await getProductById(uid, productId);
-    const parsedBuyPrice = parseFloat(productForBuyPrice?.buyPrice) || 0;
+    const rawBuyPrice = productForBuyPrice?.buyPrice;
+    const hasBuyPrice = rawBuyPrice !== undefined && rawBuyPrice !== null && rawBuyPrice !== '' && !isNaN(parseFloat(rawBuyPrice));
+    const parsedBuyPrice = hasBuyPrice ? parseFloat(rawBuyPrice) : null;
 
     await insertSale(uid, {
       id: saleId,

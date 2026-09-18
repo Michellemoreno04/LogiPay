@@ -171,35 +171,31 @@ export function LocalDataProvider({ children }) {
     };
   }, [user]);
 
-  // ─── Cargar actividad reciente desde SQLite ───
+  // ─── Helpers de recarga desde SQLite ───
+  const loadRecent = useCallback(async () => {
+    if (!user) return;
+    const recent = await getRecentActivity(user.uid, 8);
+    setRecentActivityState(
+      recent.map((tx) => ({
+        ...tx,
+        _timestamp: tx.createdAt,
+        _date: new Date(tx.createdAt),
+      }))
+    );
+  }, [user]);
+
+  const loadClients = useCallback(async () => {
+    if (!user) return;
+    const localClients = await getClients(user.uid);
+    setClientsState(localClients);
+  }, [user]);
+
+  // ─── Cargar actividad reciente desde SQLite y escuchar cambios ───
   useEffect(() => {
     if (!user) return;
-    let isMounted = true;
-
-    const loadRecent = async () => {
-      const recent = await getRecentActivity(user.uid, 8);
-      if (isMounted) {
-        setRecentActivityState(
-          recent.map((tx) => ({
-            ...tx,
-            _timestamp: tx.createdAt,
-            _date: new Date(tx.createdAt),
-          }))
-        );
-      }
-    };
-
-    const loadClients = async () => {
-      const localClients = await getClients(user.uid);
-      if (isMounted) {
-        setClientsState(localClients);
-      }
-    };
-
     loadRecent();
 
-    // Escuchar evento de cambio local para refrescar actividad reciente y clientes desde SQLite
-    const handleLocalDbChanged = async () => {
+    const handleLocalDbChanged = () => {
       loadRecent();
       loadClients();
     };
@@ -208,10 +204,9 @@ export function LocalDataProvider({ children }) {
     const sub = DeviceEventEmitter.addListener('local-db-changed', handleLocalDbChanged);
 
     return () => {
-      isMounted = false;
       sub.remove();
     };
-  }, [user]);
+  }, [user, loadRecent, loadClients]);
 
   // ─── Cargar productos y ventas recientes desde SQLite ───
   useEffect(() => {
@@ -230,6 +225,7 @@ export function LocalDataProvider({ children }) {
         setTodaySalesState(tSales);
         setLoadingProducts(false);
       }
+      loadRecent();
     };
 
     loadProducts();
@@ -241,7 +237,7 @@ export function LocalDataProvider({ children }) {
       isMounted = false;
       sub.remove();
     };
-  }, [user]);
+  }, [user, loadRecent]);
 
 
   // ─── Helpers de actualización de estado ───
@@ -250,17 +246,7 @@ export function LocalDataProvider({ children }) {
     setClientsState(newClients);
   }, []);
 
-  const updateRecentActivity = useCallback(async () => {
-    if (!user) return;
-    const recent = await getRecentActivity(user.uid, 8);
-    setRecentActivityState(
-      recent.map((tx) => ({
-        ...tx,
-        _timestamp: tx.createdAt,
-        _date: new Date(tx.createdAt),
-      }))
-    );
-  }, [user]);
+  const updateRecentActivity = loadRecent;
 
 
   // ─── ACCIONES OPTIMISTAS ───
@@ -286,12 +272,14 @@ export function LocalDataProvider({ children }) {
         amount: parsedBalance,
         title: balanceDescription || 'Saldo inicial',
         description: balanceDescription || 'Saldo inicial',
+        rawDescription: balanceDescription || 'Saldo inicial',
         clientName: name,
+        createdAt: now,
         _timestamp: now,
         _date: new Date(now),
       };
       pendingOpsRef.current.addedTxs[newTx.id] = newTx;
-      setRecentActivityState((prev) => [newTx, ...prev].slice(0, 5));
+      setRecentActivityState((prev) => [newTx, ...prev.filter((t) => t.id !== newTx.id)].slice(0, 8));
     }
   }, []);
 
@@ -308,23 +296,27 @@ export function LocalDataProvider({ children }) {
    * Agrega una transacción localmente (en memoria).
    */
   const addTransactionOptimistic = useCallback(async ({
-    txId, clientId, clientName, type, amount, title, description,
+    txId, clientId, clientName, type, amount, title, description, rawDescription, createdAt,
   }) => {
-    const now = Date.now();
+    const now = createdAt || Date.now();
+    const isCash = !clientId;
+    const resolvedClientName = clientName || (clientId && clientId !== 'global' ? 'Sin nombre' : isCash ? 'Venta al contado' : 'Ajuste de Saldo');
     const newTx = {
       id: txId,
-      type,
+      type: type || (isCash ? 'sale' : 'debt'),
       amount,
-      title,
-      description,
-      clientName,
-      clientId,
+      title: title || description || 'Transacción',
+      description: title || description || 'Transacción',
+      rawDescription: rawDescription || description || '',
+      clientName: resolvedClientName,
+      clientId: clientId || null,
+      createdAt: now,
       _timestamp: now,
       _date: new Date(now),
     };
 
     // Actualizar balance del cliente en memoria si hay cliente
-    if (clientId) {
+    if (clientId && clientId !== 'global') {
       const balanceChange = (type === 'payment' || type === 'debt_payment') ? amount : (type === 'recurring_payment' ? 0 : -amount);
       if (balanceChange !== 0) {
         setClientsState((prev) =>
@@ -334,7 +326,7 @@ export function LocalDataProvider({ children }) {
     }
 
     pendingOpsRef.current.addedTxs[newTx.id] = newTx;
-    setRecentActivityState((prev) => [newTx, ...prev].slice(0, 5));
+    setRecentActivityState((prev) => [newTx, ...prev.filter((t) => t.id !== newTx.id)].slice(0, 8));
 
     return newTx;
   }, []);
@@ -392,19 +384,23 @@ export function LocalDataProvider({ children }) {
 
   // ─── ACCIONES OPTIMISTAS – PRODUCTOS ───
 
-  const addProductOptimistic = useCallback(({ productId, name, price, description, stock }) => {
+  const addProductOptimistic = useCallback(({ productId, name, price, description, stock, barcode, buyPrice, category, photoUri }) => {
     const newProduct = {
       id: productId,
       name,
       price: parseFloat(price) || 0,
       description: description || '',
       stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
+      barcode: barcode || '',
+      buyPrice: (buyPrice !== '' && buyPrice !== null && buyPrice !== undefined && !isNaN(parseFloat(buyPrice))) ? parseFloat(buyPrice) : null,
+      category: category || '',
+      photoUri: photoUri || '',
       createdAt: Date.now(),
     };
     setProductsState((prev) => [newProduct, ...prev]);
   }, []);
 
-  const editProductOptimistic = useCallback(({ productId, name, price, description, stock }) => {
+  const editProductOptimistic = useCallback(({ productId, name, price, description, stock, barcode, buyPrice, category, photoUri }) => {
     setProductsState((prev) =>
       prev.map((p) =>
         p.id === productId
@@ -414,6 +410,10 @@ export function LocalDataProvider({ children }) {
             price: parseFloat(price) || 0,
             description: description || '',
             stock: stock !== '' && stock !== null && stock !== undefined ? parseFloat(stock) : -1,
+            barcode: barcode !== undefined ? barcode : p.barcode,
+            buyPrice: (buyPrice !== '' && buyPrice !== null && buyPrice !== undefined && !isNaN(parseFloat(buyPrice))) ? parseFloat(buyPrice) : null,
+            category: category !== undefined ? category : p.category,
+            photoUri: photoUri !== undefined ? photoUri : p.photoUri,
           }
           : p
       )
@@ -435,7 +435,7 @@ export function LocalDataProvider({ children }) {
       clientName,
       quantity,
       unitPrice,
-      buyPrice: buyPrice ?? 0,
+      buyPrice: (buyPrice !== undefined && buyPrice !== null && buyPrice !== '' && !isNaN(parseFloat(buyPrice))) ? parseFloat(buyPrice) : null,
       totalAmount,
       date,
       createdAt: now,

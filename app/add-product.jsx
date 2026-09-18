@@ -202,8 +202,9 @@ export default function AddProductScreen() {
 
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 32 }]}
+          contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 100 }]}
           keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={true}
           showsVerticalScrollIndicator={false}
         >
           {/* Photo */}

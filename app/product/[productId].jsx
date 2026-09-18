@@ -75,14 +75,31 @@ export default function ProductDetailScreen() {
         unitPrice,
       });
 
+      const parsedQty = parseFloat(quantity) || 1;
+      const parsedPrice = parseFloat(unitPrice) || 0;
+      const isCash = !clientId;
+      const effectiveClientName = clientName || (isCash ? 'Venta al contado' : (clients?.find((c) => c.id === clientId)?.name || 'Sin nombre'));
+      const txTitle = `Compra: ${product?.name || 'Producto'}`;
+      const txDescription = JSON.stringify({
+        isInvoice: true,
+        items: [{
+          productId,
+          productName: product?.name || 'Producto',
+          quantity: parsedQty,
+          unitPrice: parsedPrice,
+          totalAmount: result.totalAmount,
+        }],
+        totalAmount: result.totalAmount,
+      });
+
       // Actualización optimista de la venta (activity feed + stock)
       addSaleOptimistic({
         saleId: result.saleId,
         productId,
-        clientId,
-        clientName,
-        quantity,
-        unitPrice,
+        clientId: clientId || '',
+        clientName: effectiveClientName,
+        quantity: parsedQty,
+        unitPrice: parsedPrice,
         buyPrice: result.buyPrice,
         totalAmount: result.totalAmount,
         date: result.date,
@@ -90,25 +107,27 @@ export default function ProductDetailScreen() {
         productName: product?.name || '',
       });
 
-      // Actualización optimista de la transacción de deuda del cliente
-      // (actualiza balance del cliente en memoria)
+      // Actualización optimista de la transacción de deuda del cliente o venta al contado
       addTransactionOptimistic({
         txId: result.txId,
-        clientId,
-        clientName,
-        type: 'debt',
+        clientId: clientId || null,
+        clientName: effectiveClientName,
+        type: isCash ? 'sale' : 'debt',
         amount: result.totalAmount,
-        title: `Compra: ${product?.name || 'Producto'}`,
-        description: `Compra: ${product?.name || 'Producto'}`,
+        title: txTitle,
+        description: txTitle,
+        rawDescription: txDescription,
       });
 
-      // Actualizar totalDebt en AuthContext inmediatamente
-      // (esto actualiza el 'Monto total por cobrar' en home sin reiniciar)
-      updateLocalUserData({
-        totalDebt: (userData?.totalDebt || 0) + result.totalAmount,
-      });
+      // Actualizar totalDebt en AuthContext inmediatamente si no es venta al contado
+      if (updateLocalUserData && !isCash) {
+        updateLocalUserData({
+          totalDebt: (userData?.totalDebt || 0) + result.totalAmount,
+        });
+      }
 
       DeviceEventEmitter.emit('products-db-changed');
+      DeviceEventEmitter.emit('local-db-changed');
       setSaleModalVisible(false);
       await loadSales();
     } catch (e) {

@@ -2,10 +2,19 @@ import * as NavigationBar from 'expo-navigation-bar';
 import { Stack, useRouter } from "expo-router";
 import * as Updates from 'expo-updates';
 import { useEffect } from "react";
-import { Alert, Platform, StatusBar } from 'react-native';
+import { Alert, Platform, StatusBar, Text, TextInput } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import AuthProvider, { useAuth } from "../authContext/authContext";
 import { LocalDataProvider } from "../context/LocalDataContext";
+
+// Evitar que la configuración de accesibilidad / fuente grande del sistema operativo deforme los textos
+if (Text.defaultProps == null) Text.defaultProps = {};
+Text.defaultProps.allowFontScaling = false;
+Text.defaultProps.maxFontSizeMultiplier = 1;
+
+if (TextInput.defaultProps == null) TextInput.defaultProps = {};
+TextInput.defaultProps.allowFontScaling = false;
+TextInput.defaultProps.maxFontSizeMultiplier = 1;
 
 // Desactiva el modo estricto de Reanimated para suprimir las advertencias de react-native-lumen
 configureReanimatedLogger({

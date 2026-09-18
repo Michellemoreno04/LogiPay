@@ -268,13 +268,30 @@ function ProductsScreenContent() {
         unitPrice,
       });
 
+      const parsedQty = parseFloat(quantity) || 1;
+      const parsedPrice = parseFloat(unitPrice) || 0;
+      const isCash = !clientId;
+      const effectiveClientName = clientName || (isCash ? 'Venta al contado' : (clients?.find((c) => c.id === clientId)?.name || 'Sin nombre'));
+      const txTitle = `Compra: ${selectedProductForSale.name || 'Producto'}`;
+      const txDescription = JSON.stringify({
+        isInvoice: true,
+        items: [{
+          productId: selectedProductForSale.id,
+          productName: selectedProductForSale.name || 'Producto',
+          quantity: parsedQty,
+          unitPrice: parsedPrice,
+          totalAmount: result.totalAmount,
+        }],
+        totalAmount: result.totalAmount,
+      });
+
       addSaleOptimistic({
         saleId: result.saleId,
         productId: selectedProductForSale.id,
-        clientId,
-        clientName,
-        quantity,
-        unitPrice,
+        clientId: clientId || '',
+        clientName: effectiveClientName,
+        quantity: parsedQty,
+        unitPrice: parsedPrice,
         buyPrice: result.buyPrice,
         totalAmount: result.totalAmount,
         date: result.date,
@@ -284,15 +301,16 @@ function ProductsScreenContent() {
 
       addTransactionOptimistic({
         txId: result.txId,
-        clientId,
-        clientName,
-        type: 'debt',
+        clientId: clientId || null,
+        clientName: effectiveClientName,
+        type: isCash ? 'sale' : 'debt',
         amount: result.totalAmount,
-        title: `Compra: ${selectedProductForSale.name || 'Producto'}`,
-        description: `Compra: ${selectedProductForSale.name || 'Producto'}`,
+        title: txTitle,
+        description: txTitle,
+        rawDescription: txDescription,
       });
 
-      if (updateLocalUserData) {
+      if (updateLocalUserData && !isCash) {
         updateLocalUserData({
           totalDebt: (userData?.totalDebt || 0) + result.totalAmount,
         });
