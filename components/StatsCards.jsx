@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../authContext/authContext';
 import { useLocalData } from '../context/LocalDataContext';
-import { getAllClientTransactions } from '../utils/database';
+import { getAllClientTransactions, getInvestments, insertTransaction } from '../utils/database';
 
 
 
@@ -161,6 +161,71 @@ function AdjustModal({ visible, label, currentValue, isCurrency, accentColors, o
   );
 }
 
+// ─── Menú desplegable de 3 puntos ───
+function OptionsMenu({ onEdit, onReset, accentColor }) {
+  const [visible, setVisible] = useState(false);
+  const [anchor, setAnchor] = useState({ x: 0, y: 0 });
+
+  const menuItems = [
+    { icon: 'create-outline', label: 'Editar', action: () => { setVisible(false); onEdit(); } },
+  ];
+
+  return (
+    <View>
+      <TouchableOpacity
+        onPress={(e) => {
+          const { pageX, pageY } = e.nativeEvent;
+          setAnchor({ x: pageX, y: pageY });
+          setVisible(true);
+        }}
+        style={menuStyles.trigger}
+        activeOpacity={0.6}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Ionicons name="ellipsis-vertical" size={16} color="#9CA3AF" />
+      </TouchableOpacity>
+
+      <Modal
+        visible={visible}
+        transparent
+        animationType="none"
+        onRequestClose={() => setVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setVisible(false)}>
+          <View style={menuStyles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View
+                style={[
+                  menuStyles.dropdown,
+                  {
+                    top: anchor.y + 24,
+                    left: Math.max(16, anchor.x - 110),
+                  },
+                ]}
+              >
+                {menuItems.map((item, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[
+                      menuStyles.menuItem,
+                      idx < menuItems.length - 1 && menuStyles.menuItemBorder,
+                    ]}
+                    onPress={item.action}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name={item.icon} size={15} color={accentColor || '#4B5563'} />
+                    <Text style={menuStyles.menuText}>{item.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    </View>
+  );
+}
+
 // ─── Paleta corporativa compartida ───
 const CORP = {
   iconBg: '#F0F2F7',
@@ -177,7 +242,7 @@ const CORP = {
 };
 
 // ─── Tarjeta individual con monto ───
-function MetricCard({ icon, label, value, isLoading, trend, onEditValue, accentColors }) {
+function MetricCard({ icon, label, value, isLoading, onEditValue, onReset, accentColors }) {
   const [modalVisible, setModalVisible] = useState(false);
 
   return (
@@ -187,20 +252,16 @@ function MetricCard({ icon, label, value, isLoading, trend, onEditValue, accentC
         <View style={styles.topDivider} />
 
         <View style={styles.cardInner}>
-          {/* Fila superior: ícono + tendencia */}
+          {/* Fila superior: ícono + menú */}
           <View style={styles.cardTopRow}>
             <View style={styles.iconBg}>
               <Ionicons name={icon} size={16} color={CORP.iconColor} />
             </View>
-            {trend !== undefined && (
-              <View style={styles.trendBadge}>
-                <Ionicons
-                  name={trend >= 0 ? 'arrow-up' : 'arrow-down'}
-                  size={10}
-                  color={trend >= 0 ? CORP.upColor : CORP.downColor}
-                />
-              </View>
-            )}
+            <OptionsMenu
+              onEdit={() => setModalVisible(true)}
+              onReset={onReset}
+              accentColor={CORP.iconColor}
+            />
           </View>
 
           {/* Etiqueta */}
@@ -214,16 +275,6 @@ function MetricCard({ icon, label, value, isLoading, trend, onEditValue, accentC
               ${formatCurrency(value)}
             </Text>
           )}
-
-          {/* Footer — solo el botón Editar abre el modal */}
-          <TouchableOpacity
-            style={styles.cardFooter}
-            onPress={() => setModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="pencil-outline" size={11} color={CORP.editColor} />
-            <Text style={styles.footerText}>Editar</Text>
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -241,7 +292,7 @@ function MetricCard({ icon, label, value, isLoading, trend, onEditValue, accentC
 }
 
 // ─── Tarjeta de conteo (sin símbolo $) ───
-function CountCard({ icon, label, count, isLoading, onEditValue, accentColors }) {
+function CountCard({ icon, label, count, isLoading, onEditValue, onReset, accentColors }) {
   const [modalVisible, setModalVisible] = useState(false);
 
   return (
@@ -251,11 +302,16 @@ function CountCard({ icon, label, count, isLoading, onEditValue, accentColors })
         <View style={styles.topDivider} />
 
         <View style={styles.cardInner}>
-          {/* Fila superior: ícono */}
+          {/* Fila superior: ícono + menú */}
           <View style={styles.cardTopRow}>
             <View style={styles.iconBg}>
               <Ionicons name={icon} size={16} color={CORP.iconColor} />
             </View>
+            <OptionsMenu
+              onEdit={() => setModalVisible(true)}
+              onReset={onReset}
+              accentColor={CORP.iconColor}
+            />
           </View>
 
           {/* Etiqueta */}
@@ -269,16 +325,6 @@ function CountCard({ icon, label, count, isLoading, onEditValue, accentColors })
               {formatNumber(count)}
             </Text>
           )}
-
-          {/* Footer — solo el botón Editar abre el modal */}
-          <TouchableOpacity
-            style={styles.cardFooter}
-            onPress={() => setModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="pencil-outline" size={11} color={CORP.editColor} />
-            <Text style={styles.footerText}>Editar</Text>
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -332,7 +378,7 @@ function getMemberMonthStats(member, transactions, selectedYear, selectedMonth) 
 }
 
 // ─── Tarjeta de Pagos Recurrentes para Organización ───
-function RecurringPaymentsCard({ clients, transactions, isLoading, value, onEditValue }) {
+function RecurringPaymentsCard({ clients, transactions, isLoading, value, onEditValue, onReset }) {
   const [modalVisible, setModalVisible] = useState(false);
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -360,11 +406,16 @@ function RecurringPaymentsCard({ clients, transactions, isLoading, value, onEdit
         <View style={[styles.topDivider, { backgroundColor: '#2563EB' }]} />
 
         <View style={styles.cardInner}>
-          {/* Fila superior: solo ícono */}
+          {/* Fila superior: ícono + menú */}
           <View style={styles.cardTopRow}>
             <View style={[styles.iconBg, { backgroundColor: '#EFF6FF' }]}>
               <Ionicons name="repeat-outline" size={17} color="#2563EB" />
             </View>
+            <OptionsMenu
+              onEdit={() => setModalVisible(true)}
+              onReset={onReset}
+              accentColor="#2563EB"
+            />
           </View>
 
           {/* Etiqueta */}
@@ -380,18 +431,6 @@ function RecurringPaymentsCard({ clients, transactions, isLoading, value, onEdit
               ${formatCurrency(displayValue)}
             </Text>
           )}
-
-          {/* Footer — solo el botón Editar abre el modal */}
-          <TouchableOpacity
-            style={styles.cardFooter}
-            onPress={() => setModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="pencil-outline" size={11} color="#55575cff" />
-            <Text style={[styles.footerText, { color: '#4e505584', fontWeight: '600' }]}>
-              Editar
-            </Text>
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -408,10 +447,179 @@ function RecurringPaymentsCard({ clients, transactions, isLoading, value, onEdit
   );
 }
 
+// ─── Tarjeta de Inversión ───
+function InvestmentCard({ totalInvested, investments, isLoading, onAddInvestment }) {
+  const [modalVisible, setModalVisible] = useState(false);
+  const [inputValue, setInputValue] = useState('');
+  const [note, setNote] = useState('');
+  const [kbHeight, setKbHeight] = useState(0);
+
+  useEffect(() => {
+    if (modalVisible) {
+      setInputValue('');
+      setNote('');
+      setKbHeight(0);
+    }
+  }, [modalVisible]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, (e) => setKbHeight(e.endCoordinates.height));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKbHeight(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const handleSave = () => {
+    const parsed = parseFloat(inputValue.replace(/,/g, ''));
+    if (isNaN(parsed) || parsed <= 0) {
+      Alert.alert('Valor inválido', 'Ingresa un monto mayor a 0.');
+      return;
+    }
+    onAddInvestment && onAddInvestment(parsed, note.trim());
+    setModalVisible(false);
+  };
+
+  const ACCENT = ['#059669', '#047857'];
+
+  return (
+    <View style={styles.cardWrapper}>
+      <View style={styles.statCard}>
+        {/* Línea superior verde */}
+        <View style={[styles.topDivider, { backgroundColor: '#059669' }]} />
+
+        <View style={styles.cardInner}>
+          {/* Fila superior: ícono + botón agregar */}
+          <View style={styles.cardTopRow}>
+            <View style={[styles.iconBg, { backgroundColor: '#ECFDF5' }]}>
+              <Ionicons name="wallet-outline" size={16} color="#059669" />
+            </View>
+            <TouchableOpacity
+              onPress={() => setModalVisible(true)}
+              style={investStyles.addBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="add" size={22} color="#059669" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Etiqueta */}
+          <Text style={styles.statLabel} numberOfLines={2}>Dinero Invertido</Text>
+
+          {/* Valor */}
+          {isLoading ? (
+            <ActivityIndicator size="small" color="#059669" style={styles.loader} />
+          ) : (
+            <Text style={[styles.statValue, { color: '#059669' }]} numberOfLines={1} adjustsFontSizeToFit>
+              ${formatCurrency(totalInvested)}
+            </Text>
+          )}
+
+          {/* Último registro */}
+          {investments && investments.length > 0 && (
+            <View style={investStyles.lastEntry}>
+              <Ionicons name="time-outline" size={10} color="#9CA3AF" />
+              <Text style={investStyles.lastEntryText} numberOfLines={1}>
+                Último: ${formatCurrency(investments[investments.length - 1]?.amount)} 
+              </Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Modal para agregar inversión */}
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+        <TouchableWithoutFeedback onPress={() => setModalVisible(false)}>
+          <View style={modalStyles.overlay}>
+            <TouchableWithoutFeedback>
+              <View style={[modalStyles.sheet, { marginBottom: kbHeight }]}>
+                <View style={modalStyles.handle} />
+
+                {/* Encabezado */}
+                <View style={modalStyles.header}>
+                  <LinearGradient colors={ACCENT} style={modalStyles.iconCircle}>
+                    <Ionicons name="wallet-outline" size={22} color="#fff" />
+                  </LinearGradient>
+                  <View style={{ flex: 1, marginLeft: 14 }}>
+                    <Text style={modalStyles.title}>Registrar Inversión</Text>
+                    <Text style={modalStyles.subtitle}>Agrega el monto invertido</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setModalVisible(false)} style={modalStyles.closeBtn}>
+                    <Ionicons name="close" size={22} color="#8E8E93" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Campo de monto */}
+                <View style={[modalStyles.inputWrapper, { borderColor: ACCENT[0] + '55' }]}>
+                  <Text style={[modalStyles.currency, { color: ACCENT[0] }]}>$</Text>
+                  <TextInput
+                    style={modalStyles.input}
+                    value={inputValue}
+                    onChangeText={(text) => setInputValue(formatInputWithCommas(text))}
+                    keyboardType="decimal-pad"
+                    autoFocus
+                    placeholder="0.00"
+                    placeholderTextColor="#C7C7CC"
+                  />
+                </View>
+
+                {/* Nota (opcional) */}
+                <Text style={modalStyles.reasonLabel}>Nota (opcional)</Text>
+                <View style={[modalStyles.reasonInputWrapper, { borderColor: ACCENT[0] + '33' }]}>
+                  <TextInput
+                    style={modalStyles.reasonInput}
+                    value={note}
+                    onChangeText={setNote}
+                    placeholder="Ej: Compra de inventario, equipos..."
+                    placeholderTextColor="#9CA3AF"
+                    multiline
+                    numberOfLines={2}
+                    maxLength={150}
+                  />
+                </View>
+
+                {/* Botones */}
+                <View style={modalStyles.btnRow}>
+                  <TouchableOpacity onPress={() => setModalVisible(false)} style={modalStyles.cancelBtn} activeOpacity={0.7}>
+                    <Text style={modalStyles.cancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleSave} activeOpacity={0.8} style={{ flex: 1 }}>
+                    <LinearGradient
+                      colors={ACCENT}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={modalStyles.saveBtn}
+                    >
+                      <Ionicons name="add-circle" size={20} color="#fff" />
+                      <Text style={modalStyles.saveText}>Registrar</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    </View>
+  );
+}
+
 // ─── Componente principal ───
 const StatsCards = ({ userData, onAdjust }) => {
   const { user } = useAuth();
-  const { clients, products, recentSales, todaySales, loadingClients, loadingProducts } = useLocalData();
+  const {
+    clients,
+    products,
+    recentSales,
+    todaySales,
+    loadingClients,
+    loadingProducts,
+    addTransactionOptimistic,
+  } = useLocalData();
 
   const isOrg = userData?.businessType === 'organization';
 
@@ -452,6 +660,77 @@ const StatsCards = ({ userData, onAdjust }) => {
     setOverrides((prev) => ({ ...prev, [key]: val }));
     if (onAdjust) {
       onAdjust(key, val, reason);
+    }
+  };
+  const resetOverride = (key) => {
+    setOverrides((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  // Estado de inversiones (cargado desde SQLite y actualizado reactivamente)
+  const [investments, setInvestments] = useState([]);
+  const totalInvested = useMemo(() =>
+    investments.reduce((sum, inv) => sum + (inv.amount || 0), 0),
+    [investments]
+  );
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    let isMounted = true;
+
+    const loadInvestmentsData = async () => {
+      try {
+        const rows = await getInvestments(user.uid);
+        if (isMounted) {
+          setInvestments(rows || []);
+        }
+      } catch (err) {
+        console.error('Error loading investments:', err);
+      }
+    };
+
+    loadInvestmentsData();
+
+    const sub = DeviceEventEmitter.addListener('local-db-changed', loadInvestmentsData);
+    return () => {
+      isMounted = false;
+      sub.remove();
+    };
+  }, [user]);
+
+  const handleAddInvestment = async (amount, note) => {
+    const now = Date.now();
+    const invTx = {
+      id: `inv_${now}_${Math.random().toString(36).substring(2, 7)}`,
+      clientId: 'investment',
+      clientName: 'Inversión en Negocio',
+      type: 'investment',
+      amount: amount,
+      title: note ? `Inversión: ${note}` : 'Inversión al negocio',
+      description: note || 'Dinero invertido en el negocio',
+      date: new Date(now).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }),
+      createdAt: now,
+    };
+
+    // Actualizar estado local inmediatamente
+    setInvestments((prev) => [...prev, invTx]);
+
+    // Registrar en SQLite
+    if (user?.uid) {
+      try {
+        await insertTransaction(user.uid, invTx);
+        DeviceEventEmitter.emit('local-db-changed');
+      } catch (err) {
+        console.error('Error saving investment transaction:', err);
+      }
+    }
+
+    // Actualizar actividad reciente para ActivityItem
+    if (addTransactionOptimistic) {
+      addTransactionOptimistic(invTx);
     }
   };
 
@@ -537,8 +816,8 @@ const StatsCards = ({ userData, onAdjust }) => {
               label="Deudas Pendientes"
               value={overrides['deudas'] ?? totalDeudas}
               isLoading={loadingClients}
-              trend={-1}
               onEditValue={(v, r) => setOverride('deudas', v, r)}
+              onReset={() => resetOverride('deudas')}
             />
             <RecurringPaymentsCard
               clients={clients}
@@ -546,6 +825,7 @@ const StatsCards = ({ userData, onAdjust }) => {
               isLoading={loadingClients || loadingTx}
               value={overrides['recurrentes']}
               onEditValue={(v, r) => setOverride('recurrentes', v, r)}
+              onReset={() => resetOverride('recurrentes')}
             />
           </View>
         </>
@@ -560,16 +840,16 @@ const StatsCards = ({ userData, onAdjust }) => {
               label="Total Ingresado"
               value={overrides['ingresado'] ?? totalVentasAmount}
               isLoading={loadingProducts}
-              trend={1}
               onEditValue={(v, r) => setOverride('ingresado', v, r)}
+              onReset={() => resetOverride('ingresado')}
             />
             <MetricCard
               icon="alert-circle-outline"
               label="Deudas Pendientes"
               value={overrides['deudas'] ?? totalDeudas}
               isLoading={loadingClients}
-              trend={-1}
               onEditValue={(v, r) => setOverride('deudas', v, r)}
+              onReset={() => resetOverride('deudas')}
             />
           </View>
 
@@ -580,8 +860,8 @@ const StatsCards = ({ userData, onAdjust }) => {
               label="Ganancia por Ventas"
               value={overrides['ganancia'] ?? gananciaVentas}
               isLoading={loadingProducts}
-              trend={1}
               onEditValue={(v, r) => setOverride('ganancia', v, r)}
+              onReset={() => resetOverride('ganancia')}
             />
             <CountCard
               icon="receipt-outline"
@@ -589,6 +869,17 @@ const StatsCards = ({ userData, onAdjust }) => {
               count={overrides['ventas'] ?? totalVentas}
               isLoading={loadingProducts}
               onEditValue={(v, r) => setOverride('ventas', v, r)}
+              onReset={() => resetOverride('ventas')}
+            />
+          </View>
+
+          {/* Fila 3: Inversión */}
+          <View style={styles.row}>
+            <InvestmentCard
+              totalInvested={totalInvested}
+              investments={investments}
+              isLoading={false}
+              onAddInvestment={handleAddInvestment}
             />
           </View>
         </>
@@ -677,21 +968,79 @@ const styles = StyleSheet.create({
     marginVertical: 4,
     alignSelf: 'flex-start',
   },
-  cardFooter: {
+});
+
+// ─── Estilos del menú de opciones ───
+const menuStyles = StyleSheet.create({
+  trigger: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F6FA',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  dropdown: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingVertical: 4,
+    width: 140,
+    shadowColor: '#1A1F4B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: '#ECEEF4',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  menuItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F2F7',
+  },
+  menuText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
+  },
+});
+
+// ─── Estilos de la tarjeta de inversión ───
+const investStyles = StyleSheet.create({
+  addBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lastEntry: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 10,
-    paddingTop: 8,
+    marginTop: 8,
+    paddingTop: 6,
     borderTopWidth: 1,
     borderTopColor: '#F0F2F7',
-    alignSelf: 'flex-start',
   },
-  footerText: {
+  lastEntryText: {
     fontSize: 10,
     color: '#9CA3AF',
     fontWeight: '500',
-    letterSpacing: 0.2,
   },
 });
 

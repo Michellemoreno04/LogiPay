@@ -80,6 +80,9 @@ export const editProduct = async ({ uid, productId, name, price, description, st
   } else if (typeof barcodes === 'string') {
     try { barcodesArr = JSON.parse(barcodes); } catch { barcodesArr = []; }
   }
+  if (barcode && !barcodesArr.includes(barcode)) {
+    barcodesArr.unshift(barcode);
+  }
   const barcodesJson = JSON.stringify(barcodesArr);
   const normalizedBuyPrice = (buyPrice !== '' && buyPrice !== null && buyPrice !== undefined && !isNaN(parseFloat(buyPrice))) ? parseFloat(buyPrice) : null;
 

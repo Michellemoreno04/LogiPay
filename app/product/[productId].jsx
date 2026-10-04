@@ -8,6 +8,7 @@ import {
   Animated,
   DeviceEventEmitter,
   FlatList,
+  Image,
   Platform,
   StyleSheet,
   Text,
@@ -238,9 +239,13 @@ export default function ProductDetailScreen() {
         <Animated.View
           style={[styles.headerContent, { opacity: headerOpacity, transform: [{ translateY: headerSlide }] }]}
         >
-          <View style={styles.productIconBig}>
-            <Ionicons name="cube" size={32} color="#4C669F" />
-          </View>
+          {product.photoUri ? (
+            <Image source={{ uri: product.photoUri }} style={styles.productImageBig} />
+          ) : (
+            <View style={styles.productIconBig}>
+              <Ionicons name="cube" size={32} color="#4C669F" />
+            </View>
+          )}
           <Text style={styles.productNameHeader} numberOfLines={2}>{product.name}</Text>
           {product.description ? (
             <Text style={styles.productDescHeader}>{product.description}</Text>
@@ -400,6 +405,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8EEFF',
     alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: 14,
+  },
+  productImageBig: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    backgroundColor: '#E8EEFF',
     marginBottom: 14,
   },
   productNameHeader: {

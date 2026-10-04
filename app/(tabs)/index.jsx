@@ -436,7 +436,12 @@ function HomeScreenContent() {
               </Text>
             </View>
           ) : (
-            filteredActivity.map((item) => <ActivityItem key={item.id} item={item} />)
+            filteredActivity.map((item, idx) => (
+              <ActivityItem
+                key={item.id ? `${item._source || 'act'}-${item.id}-${idx}` : `activity-${idx}`}
+                item={item}
+              />
+            ))
           )}
         </View>
       </ScrollView>

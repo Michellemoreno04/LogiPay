@@ -1,6 +1,5 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Camera, useCameraDevice, useCameraPermission, useCodeScanner } from 'react-native-vision-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -10,6 +9,7 @@ import {
   Animated,
   DeviceEventEmitter,
   FlatList,
+  Image,
   Modal,
   Platform,
   ScrollView,
@@ -17,10 +17,13 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
+  useWindowDimensions,
   Vibration,
   View,
 } from 'react-native';
 import { SnappySpringConfig, TourProvider, TourZone, useTour } from 'react-native-lumen';
+import { Camera, useCameraDevice, useCameraPermission, useCodeScanner } from 'react-native-vision-camera';
 import { useAuth } from '../../authContext/authContext';
 import SaleModal from '../../components/modales/SaleModal';
 import { useLocalData } from '../../context/LocalDataContext';
@@ -71,6 +74,8 @@ function ProductsScreenContent() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('todos');
+  const [menuProduct, setMenuProduct] = useState(null);
+  const [menuAnchor, setMenuAnchor] = useState({ x: 0, y: 0 });
 
   // Scanner state
   const [scannerVisible, setScannerVisible] = useState(false);
@@ -80,7 +85,7 @@ function ProductsScreenContent() {
   const device = useCameraDevice('back');
 
   const codeScanner = useCodeScanner({
-    codeTypes: ['ean-13','ean-8','upc-a','upc-e','code-128','code-39','code-93','qr','pdf-417','aztec','data-matrix'],
+    codeTypes: ['ean-13', 'ean-8', 'upc-a', 'upc-e', 'code-128', 'code-39', 'code-93', 'qr', 'pdf-417', 'aztec', 'data-matrix'],
     onCodeScanned: (codes) => {
       if (scanned) return;
       const first = codes[0];
@@ -146,14 +151,6 @@ function ProductsScreenContent() {
       pathname: '/add-product',
       params: {
         productId: product.id,
-        name: product.name || '',
-        price: product.price != null ? String(product.price) : '',
-        description: product.description || '',
-        stock: product.stock >= 0 ? String(product.stock) : '',
-        barcode: product.barcode || '',
-        buyPrice: product.buyPrice || '',
-        category: product.category || '',
-        photoUri: product.photoUri || '',
       },
     });
   };
@@ -328,61 +325,166 @@ function ProductsScreenContent() {
     }
   };
 
-  const renderProduct = ({ item }) => (
-    <TouchableOpacity
-      style={styles.productCard}
-      onPress={() => router.push(`/product/${item.id}`)}
-      activeOpacity={0.88}
-    >
-      <View style={styles.productCardLeft}>
-        <LinearGradient
-          colors={['#E8EEFF', '#D0D8FF']}
-          style={styles.productAvatar}
+  const { width, height } = useWindowDimensions();
+  const numColumns = width >= 768 ? 4 : (width >= 550 ? 3 : 2);
+  const cardGap = 12;
+  const horizontalPadding = 16;
+  const cardWidth = Math.floor((width - (horizontalPadding * 2) - (cardGap * (numColumns - 1))) / numColumns);
+
+  const renderProduct = ({ item }) => {
+    const isOutOfStock = (item.stock !== undefined && item.stock !== null) && item.stock <= 0;
+    const categoryInfo = CATEGORIES.find((c) => c.id === item.category);
+
+    return (
+      <View style={{ width: cardWidth }}>
+        <TouchableOpacity
+          style={[styles.productCard, { width: cardWidth }]}
+          onPress={() => router.push(`/product/${item.id}`)}
+          activeOpacity={0.9}
         >
-          <Ionicons name="cube" size={24} color="#4C669F" />
-        </LinearGradient>
-        <View style={styles.productInfo}>
-          <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
-          {item.description ? (
-            <Text style={styles.productDesc} numberOfLines={1}>{item.description}</Text>
-          ) : null}
-          <View style={styles.tagsRow}>
-            {item.stock >= 0 && (
-              <View style={[styles.tag, item.stock === 0 && styles.tagRed]}>
-                <Ionicons name="layers-outline" size={11} color={item.stock > 0 ? '#4C669F' : '#FF3B30'} />
-                <Text style={[styles.tagText, item.stock === 0 && styles.tagTextRed]}>
-                  {item.stock > 0 ? `Stock: ${item.stock}` : 'Sin stock'}
+          {/* Top bar on card: Stock Tag & 3-dots menu */}
+          <View style={styles.cardHeaderRow}>
+            {item.stock !== undefined && item.stock !== null ? (
+              <View style={[styles.stockBadge, isOutOfStock ? styles.stockBadgeRed : styles.stockBadgeBlue]}>
+                <Text style={[styles.stockBadgeText, isOutOfStock && styles.stockBadgeTextRed]}>
+                  {isOutOfStock ? 'Agotado' : `${item.stock} disp.`}
                 </Text>
               </View>
+            ) : (
+              <View />
+            )}
+
+            <TouchableOpacity
+              style={styles.cardActionIcon}
+              onPress={(e) => {
+                const { pageX, pageY } = e.nativeEvent;
+                setMenuAnchor({ x: pageX, y: pageY });
+                setMenuProduct(item);
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              activeOpacity={0.6}
+            >
+              <Ionicons name="ellipsis-vertical" size={16} color="#64748B" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Product Image (Takes full width of the card) */}
+          <View style={styles.cardImageWrapper}>
+            {item.photoUri ? (
+              <Image
+                source={{ uri: item.photoUri }}
+                style={styles.cardProductImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <LinearGradient
+                colors={['#F0F4FF', '#E2E8F8']}
+                style={styles.cardImagePlaceholder}
+              >
+                <Ionicons
+                  name={categoryInfo?.icon || 'cube-outline'}
+                  size={40}
+                  color={categoryInfo?.color || '#4C669F'}
+                />
+              </LinearGradient>
             )}
           </View>
-        </View>
+
+          {/* Info Container */}
+          <View style={styles.cardInfoContainer}>
+            {/* Category Pill Slot */}
+            <View style={styles.categoryPillContainer}>
+              {categoryInfo && categoryInfo.id !== 'todos' ? (
+                <View style={styles.categoryPill}>
+                  <Text style={styles.categoryPillText} numberOfLines={1}>
+                    {categoryInfo.label}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Product Name & Subtitle */}
+            <Text style={styles.cardTitle} numberOfLines={2}>
+              {item.name}
+            </Text>
+
+            <Text style={styles.cardSubtitle} numberOfLines={1}>
+              {item.description || ''}
+            </Text>
+
+            {/* Bottom Price Row */}
+            <View style={styles.cardBottomRow}>
+              <Text style={styles.cardPrice}>
+                ${parseFloat(item.price || 0).toFixed(2)}
+              </Text>
+              {item.buyPrice && parseFloat(item.buyPrice) > 0 ? (
+                <Text style={styles.cardCostPrice}>
+                  Costo: ${parseFloat(item.buyPrice).toFixed(2)}
+                </Text>
+              ) : null}
+            </View>
+          </View>
+        </TouchableOpacity>
       </View>
-      <View style={styles.productCardRight}>
-        <Text style={styles.productPrice}>${parseFloat(item.price || 0).toFixed(2)}</Text>
-        <View style={styles.cardActions}>
-          <TouchableOpacity
-            style={styles.editBtn}
-            onPress={() => handleOpenEdit(item)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="create-outline" size={18} color="#4C669F" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.deleteBtn}
-            onPress={() => handleDelete(item)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="trash-outline" size={18} color="#FF3B30" />
-          </TouchableOpacity>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
+
+      {/* ─── Floating Options Dropdown Modal ─── */}
+      <Modal
+        visible={!!menuProduct}
+        transparent
+        animationType="none"
+        onRequestClose={() => setMenuProduct(null)}
+      >
+        <TouchableWithoutFeedback onPress={() => setMenuProduct(null)}>
+          <View style={styles.dropdownModalOverlay}>
+            <TouchableWithoutFeedback>
+              <View
+                style={[
+                  styles.dropdownMenuFloating,
+                  {
+                    top: Math.min(menuAnchor.y + 8, height - 130),
+                    left: Math.max(16, Math.min(menuAnchor.x - 120, width - 150)),
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  style={styles.dropdownMenuItem}
+                  onPress={() => {
+                    const prod = menuProduct;
+                    setMenuProduct(null);
+                    if (prod) handleOpenEdit(prod);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="create-outline" size={16} color="#2D3A8C" />
+                  <Text style={styles.dropdownMenuText}>Editar</Text>
+                </TouchableOpacity>
+
+                <View style={styles.dropdownMenuDivider} />
+
+                <TouchableOpacity
+                  style={styles.dropdownMenuItem}
+                  onPress={() => {
+                    const prod = menuProduct;
+                    setMenuProduct(null);
+                    if (prod) handleDelete(prod);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#FF3B30" />
+                  <Text style={[styles.dropdownMenuText, { color: '#FF3B30' }]}>Eliminar</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
       {/* ─── Header Gradient ─── */}
       <LinearGradient
         colors={['#1A1F4B', '#2D3A8C', '#4C669F']}
@@ -458,11 +560,17 @@ function ProductsScreenContent() {
 
       {/* ─── List ─── */}
       <FlatList
+        key={numColumns}
         data={filteredProducts}
         keyExtractor={(item) => item.id}
+        numColumns={numColumns}
+        columnWrapperStyle={styles.columnWrapper}
         renderItem={renderProduct}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
+        onScrollBeginDrag={() => {
+          if (menuProduct) setMenuProduct(null);
+        }}
         ListHeaderComponent={
           filteredProducts.length > 0 ? (
             <Text style={styles.sectionLabel}>
@@ -716,7 +824,15 @@ const styles = StyleSheet.create({
   },
 
   // List
-  listContent: { padding: 16, paddingBottom: 160 },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 160,
+  },
+  columnWrapper: {
+    gap: 12,
+    marginBottom: 12,
+  },
   sectionLabel: {
     fontSize: 13,
     fontWeight: '600',
@@ -726,63 +842,164 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // Product card
+  // Square Product Card
   productCard: {
     backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 20,
+    padding: 10,
+    height: 280,
+    borderWidth: 1,
+    borderColor: '#EBF0F5',
+    shadowColor: '#4C669F',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    justifyContent: 'space-between',
+  },
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    shadowColor: '#4C669F',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-    elevation: 4,
+    height: 26,
   },
-  productCardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 },
-  productAvatar: {
-    width: 50,
-    height: 50,
+  stockBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+  },
+  stockBadgeBlue: {
+    backgroundColor: '#E8F1FD',
+  },
+  stockBadgeRed: {
+    backgroundColor: '#FFEAEA',
+  },
+  stockBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#2B6CB0',
+  },
+  stockBadgeTextRed: {
+    color: '#E53E3E',
+  },
+  cardActionIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardImageWrapper: {
+    width: '100%',
+    height: 115,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 4,
+  },
+  cardProductImage: {
+    width: '100%',
+    height: '100%',
+  },
+  cardImagePlaceholder: {
+    width: '100%',
+    height: '100%',
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  productInfo: { flex: 1 },
-  productName: { fontSize: 16, fontWeight: '700', color: '#1A1F4B', marginBottom: 2 },
-  productDesc: { fontSize: 13, color: '#8E8E93', marginBottom: 6 },
-  tagsRow: { flexDirection: 'row', gap: 6 },
-  tag: {
+  cardInfoContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingTop: 2,
+  },
+  categoryPillContainer: {
+    height: 20,
+    justifyContent: 'center',
+  },
+  categoryPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EDF2F7',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  categoryPillText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#4A5568',
+    textTransform: 'capitalize',
+  },
+  cardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1A202C',
+    lineHeight: 17,
+    height: 34,
+    marginTop: 2,
+  },
+  cardSubtitle: {
+    fontSize: 11,
+    color: '#718096',
+    height: 16,
+    lineHeight: 16,
+  },
+  cardBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+
+  },
+  cardPrice: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1A202C',
+    letterSpacing: -0.3,
+  },
+  cardCostPrice: {
+    fontSize: 10.5,
+    color: '#A0AEC0',
+    fontWeight: '500',
+  },
+
+  // Dropdown Menu
+  dropdownModalOverlay: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  dropdownMenuFloating: {
+    position: 'absolute',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    paddingVertical: 4,
+    width: 140,
+    shadowColor: '#1A1F4B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: '#ECEEF4',
+  },
+  dropdownMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#E8EEFF',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
   },
-  tagRed: { backgroundColor: '#FFECEC' },
-  tagText: { fontSize: 11, fontWeight: '600', color: '#4C669F' },
-  tagTextRed: { color: '#FF3B30' },
-  productCardRight: { alignItems: 'flex-end', gap: 8 },
-  productPrice: { fontSize: 18, fontWeight: '800', color: '#2D3A8C' },
-  cardActions: { flexDirection: 'row', gap: 10 },
-  editBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: '#E8EEFF',
-    alignItems: 'center',
-    justifyContent: 'center',
+  dropdownMenuDivider: {
+    height: 1,
+    backgroundColor: '#F0F2F7',
+    marginHorizontal: 8,
   },
-  deleteBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: '#FFECEC',
-    alignItems: 'center',
-    justifyContent: 'center',
+  dropdownMenuText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#374151',
   },
 
   // Empty

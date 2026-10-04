@@ -78,6 +78,7 @@ export default function ActivityItem({ item }) {
     } catch (e) {}
   }
 
+  const isInvestment = item.type === 'investment';
   let isPayment = item.type === 'payment' || item.type === 'debt_payment' || item.type === 'recurring_payment';
   const isSale = item.type === 'sale';
 
@@ -85,12 +86,14 @@ export default function ActivityItem({ item }) {
     ? 'Factura'
     : isSale
     ? 'Venta'
+    : isInvestment
+    ? 'Inversión'
     : item.type === 'recurring_payment'
     ? 'Cuota'
     : isPayment
     ? 'Abono'
     : 'Cargo';
-  let amountPrefix = (isSale || !item.clientId) ? '' : isPayment ? '+' : '-';
+  let amountPrefix = isInvestment ? '+' : (isSale || !item.clientId) ? '' : isPayment ? '+' : '-';
 
   if (item.clientId === 'global') {
     const isIncrease = item.type === 'increase' || item.type === 'debt';
@@ -98,7 +101,7 @@ export default function ActivityItem({ item }) {
       isPayment = true;
       badgeLabel = 'Abono';
       amountPrefix = '+';
-    } else if (item.type !== 'sale') {
+    } else if (item.type !== 'sale' && !isInvestment) {
       isPayment = false;
       badgeLabel = 'Resta';
       amountPrefix = '-';
@@ -110,6 +113,8 @@ export default function ActivityItem({ item }) {
     ? { bg: '#FFF8EC', icon: '#FF9500', text: '#FF9500' }
     : isSale
     ? { bg: '#FFF8EC', icon: '#FF9500', text: '#FF9500' }
+    : isInvestment
+    ? { bg: '#ECFDF5', icon: '#059669', text: '#059669' }
     : isPayment
     ? { bg: '#ECFDF3', icon: '#34C759', text: '#34C759' }
     : { bg: '#FFF1F0', icon: '#FF3B30', text: '#FF3B30' };
@@ -118,12 +123,16 @@ export default function ActivityItem({ item }) {
     ? 'receipt'
     : isSale
     ? 'cart'
+    : isInvestment
+    ? 'wallet-outline'
     : isPayment
     ? 'arrow-up-circle'
     : 'arrow-down-circle';
 
-  const clientTitle = item.clientName || (item.clientId === 'global' ? 'Ajuste de Saldo' : item.clientId ? 'Sin nombre' : 'Venta al contado');
-  const hasClient = Boolean(item.clientId && item.clientId !== 'global');
+  const clientTitle = isInvestment
+    ? (item.clientName || 'Inversión en Negocio')
+    : item.clientName || (item.clientId === 'global' ? 'Ajuste de Saldo' : item.clientId ? 'Sin nombre' : 'Venta al contado');
+  const hasClient = Boolean(item.clientId && item.clientId !== 'global' && item.clientId !== 'investment' && !isInvestment);
 
   const openShareModal = () => {
     setOptionsModalVisible(false);
@@ -381,7 +390,7 @@ export default function ActivityItem({ item }) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalTxTitle}>
-                  {item.title || (isInvoice ? 'Factura de compra' : item.description || 'Venta')}
+                  {item.title || (isInvestment ? 'Inversión en Negocio' : isInvoice ? 'Factura de compra' : item.description || 'Venta')}
                 </Text>
                 <Text style={styles.modalTxDate}>
                   {formatTxDate(item.createdAt || item._date, item.date)}
@@ -396,9 +405,9 @@ export default function ActivityItem({ item }) {
             </View>
 
             {/* Badge de cliente / tipo */}
-            <View style={styles.clientTagRow}>
-              <Ionicons name="cash-outline" size={16} color="#4C669F" />
-              <Text style={styles.clientTagText}>{clientTitle}</Text>
+            <View style={[styles.clientTagRow, isInvestment && { backgroundColor: '#ECFDF5' }]}>
+              <Ionicons name={isInvestment ? 'wallet-outline' : 'cash-outline'} size={16} color={isInvestment ? '#059669' : '#4C669F'} />
+              <Text style={[styles.clientTagText, isInvestment && { color: '#059669' }]}>{clientTitle}</Text>
             </View>
 
             {/* Detalle o Factura */}
@@ -431,7 +440,7 @@ export default function ActivityItem({ item }) {
               </View>
             ) : (
               <View style={styles.simpleDetailBox}>
-                <Text style={styles.detailLabel}>Monto de la transacción</Text>
+                <Text style={styles.detailLabel}>{isInvestment ? 'Monto de la inversión' : 'Monto de la transacción'}</Text>
                 <Text style={[styles.detailAmountText, { color: palette.text }]}>
                   {amountPrefix}${numberFormatter.format(item.amount)}
                 </Text>

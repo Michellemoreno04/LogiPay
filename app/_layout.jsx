@@ -2,7 +2,7 @@ import * as NavigationBar from 'expo-navigation-bar';
 import { Stack, useRouter } from "expo-router";
 import * as Updates from 'expo-updates';
 import { useEffect } from "react";
-import { Alert, Platform, StatusBar, Text, TextInput } from 'react-native';
+import { Platform, StatusBar, Text, TextInput } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import AuthProvider, { useAuth } from "../authContext/authContext";
 import { LocalDataProvider } from "../context/LocalDataContext";
@@ -32,24 +32,8 @@ function RootLayoutNav() {
         const update = await Updates.checkForUpdateAsync();
 
         if (update.isAvailable) {
-          Alert.alert(
-            "Actualización disponible",
-            "Hay una nueva versión de la aplicación. ¿Deseas descargarla e instalarla ahora?",
-            [
-              { text: "Cancelar", style: "cancel" },
-              {
-                text: "Actualizar",
-                onPress: async () => {
-                  try {
-                    await Updates.fetchUpdateAsync();
-                    await Updates.reloadAsync();
-                  } catch (e) {
-                    Alert.alert("Error", "No se pudo instalar la actualización.");
-                  }
-                }
-              }
-            ]
-          );
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
         }
       } catch (error) {
         console.log(`Error al buscar actualizaciones: ${error}`);

@@ -433,7 +433,7 @@ export const getRecentTransactions = async (uid, limit = 5) => {
  * Actividad reciente combinada: transacciones + ventas de productos,
  * unificadas en un mismo shape y ordenadas por fecha descendente.
  * Shape de cada ítem:
- *   id, type ('payment'|'debt'|'sale'), amount, clientName, clientId,
+ *   id, type ('payment'|'debt'|'sale'|'investment'), amount, clientName, clientId,
  *   description, createdAt, _source ('transaction'|'sale'),
  *   productName (solo si es venta)
  */
@@ -445,7 +445,12 @@ export const getRecentActivity = async (uid, limit = 8) => {
          t.id,
          t.type,
          t.amount,
-         COALESCE(c.name, 'Venta al contado') AS clientName,
+         CASE
+           WHEN t.type = 'investment' THEN 'Inversión en Negocio'
+           WHEN c.name IS NOT NULL THEN c.name
+           WHEN t.clientId = 'global' THEN 'Ajuste de Saldo'
+           ELSE 'Venta al contado'
+         END AS clientName,
          t.clientId,
          t.title  AS description,
          t.createdAt,
@@ -462,6 +467,23 @@ export const getRecentActivity = async (uid, limit = 8) => {
     return rows;
   } catch (error) {
     console.error('Error in getRecentActivity:', error);
+    return [];
+  }
+};
+
+/**
+ * Obtener las inversiones registradas del usuario.
+ */
+export const getInvestments = async (uid) => {
+  try {
+    const database = await initDB();
+    const rows = await database.getAllAsync(
+      `SELECT * FROM transactions WHERE uid = ? AND type = 'investment' ORDER BY createdAt ASC`,
+      [uid]
+    );
+    return rows || [];
+  } catch (error) {
+    console.error('Error in getInvestments:', error);
     return [];
   }
 };

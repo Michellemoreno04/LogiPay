@@ -44,22 +44,33 @@ const CATEGORIES = [
 
 export default function AddProductScreen() {
   const { user } = useAuth();
-  const { addProductOptimistic, editProductOptimistic } = useLocalData();
+  const { addProductOptimistic, editProductOptimistic, products } = useLocalData();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
 
   const isEditing = !!params.productId;
+  const existingProduct = isEditing ? products.find((p) => p.id === params.productId) : null;
 
-  const [name, setName] = useState(params.name || '');
-  const [barcode, setBarcode] = useState(params.barcode || '');
-  const [buyPrice, setBuyPrice] = useState(params.buyPrice || '');
-  const [sellPrice, setSellPrice] = useState(params.price || '');
-  const [description, setDescription] = useState(params.description || '');
-  const [stock, setStock] = useState(
-    params.stock !== undefined && params.stock !== '-1' ? params.stock : ''
+  const [name, setName] = useState(params.name || existingProduct?.name || '');
+  const [barcode, setBarcode] = useState(params.barcode || existingProduct?.barcode || '');
+  const [buyPrice, setBuyPrice] = useState(
+    params.buyPrice !== undefined && params.buyPrice !== ''
+      ? params.buyPrice
+      : (existingProduct?.buyPrice != null ? String(existingProduct.buyPrice) : '')
   );
-  const [category, setCategory] = useState(params.category || '');
-  const [photoUri, setPhotoUri] = useState(params.photoUri || null);
+  const [sellPrice, setSellPrice] = useState(
+    params.price !== undefined && params.price !== ''
+      ? params.price
+      : (existingProduct?.price != null ? String(existingProduct.price) : '')
+  );
+  const [description, setDescription] = useState(params.description || existingProduct?.description || '');
+  const [stock, setStock] = useState(
+    params.stock !== undefined && params.stock !== '-1'
+      ? params.stock
+      : (existingProduct?.stock !== undefined && existingProduct?.stock >= 0 ? String(existingProduct.stock) : '')
+  );
+  const [category, setCategory] = useState(params.category || existingProduct?.category || '');
+  const [photoUri, setPhotoUri] = useState(params.photoUri || existingProduct?.photoUri || null);
 
   const [saving, setSaving] = useState(false);
   const [scannerVisible, setScannerVisible] = useState(false);
@@ -106,8 +117,18 @@ export default function AddProductScreen() {
         onPress: async () => {
           const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
           if (status !== 'granted') { Alert.alert('Permiso denegado', 'Necesitamos acceso a tu galería.'); return; }
-          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.7 });
-          if (!result.canceled) setPhotoUri(result.assets[0].uri);
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.5,
+            base64: true,
+          });
+          if (!result.canceled && result.assets && result.assets[0]) {
+            const asset = result.assets[0];
+            const uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+            setPhotoUri(uri);
+          }
         },
       },
       {
@@ -115,10 +136,24 @@ export default function AddProductScreen() {
         onPress: async () => {
           const { status } = await ImagePicker.requestCameraPermissionsAsync();
           if (status !== 'granted') { Alert.alert('Permiso denegado', 'Necesitamos acceso a tu cámara.'); return; }
-          const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [1, 1], quality: 0.7 });
-          if (!result.canceled) setPhotoUri(result.assets[0].uri);
+          const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.5,
+            base64: true,
+          });
+          if (!result.canceled && result.assets && result.assets[0]) {
+            const asset = result.assets[0];
+            const uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+            setPhotoUri(uri);
+          }
         },
       },
+      ...(photoUri ? [{
+        text: 'Eliminar foto',
+        style: 'destructive',
+        onPress: () => setPhotoUri(null),
+      }] : []),
       { text: 'Cancelar', style: 'cancel' },
     ]);
   };
@@ -159,7 +194,12 @@ export default function AddProductScreen() {
         photoUri: photoUri || '',
       };
       if (isEditing) {
-        await editProductService({ uid: user.uid, productId: params.productId, ...payload });
+        await editProductService({
+          uid: user.uid,
+          productId: params.productId,
+          barcodes: existingProduct?.barcodes,
+          ...payload,
+        });
         editProductOptimistic({ productId: params.productId, ...payload });
       } else {
         const { productId } = await createProduct({ uid: user.uid, ...payload });
