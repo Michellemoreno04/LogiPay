@@ -162,6 +162,11 @@ export const initDB = async () => {
           await database.execAsync("ALTER TABLE transactions ADD COLUMN description TEXT DEFAULT ''");
           console.log("[Migration] Added 'description' column to transactions table.");
         }
+        const hasTxSource = txInfo.some(col => col.name === 'source');
+        if (!hasTxSource) {
+          await database.execAsync("ALTER TABLE transactions ADD COLUMN source TEXT DEFAULT 'externo'");
+          console.log("[Migration] Added 'source' column to transactions table.");
+        }
 
         // Migración para 'sales' – agregar buyPrice
         const salesInfo = await database.getAllAsync("PRAGMA table_info(sales)");
@@ -374,8 +379,8 @@ export const insertTransaction = async (uid, tx) => {
   try {
     const database = await initDB();
     await database.runAsync(
-      `INSERT OR REPLACE INTO transactions (id, uid, clientId, type, amount, title, description, date, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR REPLACE INTO transactions (id, uid, clientId, type, amount, title, description, date, createdAt, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         tx.id,
         uid,
@@ -386,6 +391,7 @@ export const insertTransaction = async (uid, tx) => {
         tx.description || '',
         tx.date || '',
         tx.createdAt ?? Date.now(),
+        tx.source || 'externo',
       ]
     );
   } catch (error) {

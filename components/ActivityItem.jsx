@@ -79,6 +79,7 @@ export default function ActivityItem({ item }) {
   }
 
   const isInvestment = item.type === 'investment';
+  const isAdjustment = item.type === 'adjustment' || item.type === 'override';
   let isPayment = item.type === 'payment' || item.type === 'debt_payment' || item.type === 'recurring_payment';
   const isSale = item.type === 'sale';
 
@@ -88,14 +89,16 @@ export default function ActivityItem({ item }) {
     ? 'Venta'
     : isInvestment
     ? 'Inversión'
+    : isAdjustment
+    ? 'Ajuste'
     : item.type === 'recurring_payment'
     ? 'Cuota'
     : isPayment
     ? 'Abono'
     : 'Cargo';
-  let amountPrefix = isInvestment ? '+' : (isSale || !item.clientId) ? '' : isPayment ? '+' : '-';
+  let amountPrefix = isInvestment ? '+' : isAdjustment ? '' : (isSale || !item.clientId) ? '' : isPayment ? '+' : '-';
 
-  if (item.clientId === 'global') {
+  if (item.clientId === 'global' && !isAdjustment) {
     const isIncrease = item.type === 'increase' || item.type === 'debt';
     if (isIncrease) {
       isPayment = true;
@@ -115,6 +118,8 @@ export default function ActivityItem({ item }) {
     ? { bg: '#FFF8EC', icon: '#FF9500', text: '#FF9500' }
     : isInvestment
     ? { bg: '#ECFDF5', icon: '#059669', text: '#059669' }
+    : isAdjustment
+    ? { bg: '#EEF2FF', icon: '#4C669F', text: '#4C669F' }
     : isPayment
     ? { bg: '#ECFDF3', icon: '#34C759', text: '#34C759' }
     : { bg: '#FFF1F0', icon: '#FF3B30', text: '#FF3B30' };
@@ -125,14 +130,18 @@ export default function ActivityItem({ item }) {
     ? 'cart'
     : isInvestment
     ? 'wallet-outline'
+    : isAdjustment
+    ? 'create-outline'
     : isPayment
     ? 'arrow-up-circle'
     : 'arrow-down-circle';
 
   const clientTitle = isInvestment
     ? (item.clientName || 'Inversión en Negocio')
+    : isAdjustment
+    ? (item.clientName || item.title || 'Ajuste de Saldo')
     : item.clientName || (item.clientId === 'global' ? 'Ajuste de Saldo' : item.clientId ? 'Sin nombre' : 'Venta al contado');
-  const hasClient = Boolean(item.clientId && item.clientId !== 'global' && item.clientId !== 'investment' && !isInvestment);
+  const hasClient = Boolean(item.clientId && item.clientId !== 'global' && item.clientId !== 'investment' && !isInvestment && !isAdjustment);
 
   const openShareModal = () => {
     setOptionsModalVisible(false);
@@ -390,7 +399,7 @@ export default function ActivityItem({ item }) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalTxTitle}>
-                  {item.title || (isInvestment ? 'Inversión en Negocio' : isInvoice ? 'Factura de compra' : item.description || 'Venta')}
+                  {item.title || (isInvestment ? 'Inversión en Negocio' : isAdjustment ? 'Ajuste de monto' : isInvoice ? 'Factura de compra' : item.description || 'Venta')}
                 </Text>
                 <Text style={styles.modalTxDate}>
                   {formatTxDate(item.createdAt || item._date, item.date)}
@@ -405,9 +414,9 @@ export default function ActivityItem({ item }) {
             </View>
 
             {/* Badge de cliente / tipo */}
-            <View style={[styles.clientTagRow, isInvestment && { backgroundColor: '#ECFDF5' }]}>
-              <Ionicons name={isInvestment ? 'wallet-outline' : 'cash-outline'} size={16} color={isInvestment ? '#059669' : '#4C669F'} />
-              <Text style={[styles.clientTagText, isInvestment && { color: '#059669' }]}>{clientTitle}</Text>
+            <View style={[styles.clientTagRow, isInvestment && { backgroundColor: '#ECFDF5' }, isAdjustment && { backgroundColor: '#EEF2FF' }]}>
+              <Ionicons name={isInvestment ? 'wallet-outline' : isAdjustment ? 'create-outline' : 'cash-outline'} size={16} color={isInvestment ? '#059669' : isAdjustment ? '#4C669F' : '#4C669F'} />
+              <Text style={[styles.clientTagText, isInvestment && { color: '#059669' }, isAdjustment && { color: '#4C669F' }]}>{clientTitle}</Text>
             </View>
 
             {/* Detalle o Factura */}
@@ -440,7 +449,7 @@ export default function ActivityItem({ item }) {
               </View>
             ) : (
               <View style={styles.simpleDetailBox}>
-                <Text style={styles.detailLabel}>{isInvestment ? 'Monto de la inversión' : 'Monto de la transacción'}</Text>
+                <Text style={styles.detailLabel}>{isInvestment ? 'Monto de la inversión' : isAdjustment ? 'Monto ajustado' : 'Monto de la transacción'}</Text>
                 <Text style={[styles.detailAmountText, { color: palette.text }]}>
                   {amountPrefix}${numberFormatter.format(item.amount)}
                 </Text>

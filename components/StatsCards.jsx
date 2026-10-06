@@ -447,20 +447,63 @@ function RecurringPaymentsCard({ clients, transactions, isLoading, value, onEdit
   );
 }
 
+// Fuentes de dinero para inversión
+const INVESTMENT_SOURCES = [
+  {
+    key: 'ingresado',
+    label: 'Total Ingresado',
+    icon: 'trending-up-outline',
+    color: '#1A1F4B',
+    bg: '#EEF0FB',
+    desc: 'Se descontará del total ingresado',
+  },
+  {
+    key: 'ganancia',
+    label: 'Ganancia',
+    icon: 'bar-chart-outline',
+    color: '#7C3AED',
+    bg: '#F5F0FF',
+    desc: 'Se descontará de la ganancia por ventas',
+  },
+  {
+    key: 'externo',
+    label: 'Externo',
+    icon: 'person-outline',
+    color: '#D97706',
+    bg: '#FFFBEB',
+    desc: 'Dinero propio / externo (sin descuento)',
+  },
+];
+
 // ─── Tarjeta de Inversión ───
-function InvestmentCard({ totalInvested, investments, isLoading, onAddInvestment }) {
-  const [modalVisible, setModalVisible] = useState(false);
+function InvestmentCard({
+  totalInvested,
+  investments,
+  isLoading,
+  onAddInvestment,
+  totalIngresado,
+  gananciaVentas,
+  value,
+  onEditValue,
+  onReset,
+}) {
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [adjustModalVisible, setAdjustModalVisible] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [note, setNote] = useState('');
   const [kbHeight, setKbHeight] = useState(0);
+  const [selectedSource, setSelectedSource] = useState('externo');
+
+  const displayValue = value !== undefined ? value : totalInvested;
 
   useEffect(() => {
-    if (modalVisible) {
+    if (addModalVisible) {
       setInputValue('');
       setNote('');
       setKbHeight(0);
+      setSelectedSource('externo');
     }
-  }, [modalVisible]);
+  }, [addModalVisible]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -479,11 +522,34 @@ function InvestmentCard({ totalInvested, investments, isLoading, onAddInvestment
       Alert.alert('Valor inválido', 'Ingresa un monto mayor a 0.');
       return;
     }
-    onAddInvestment && onAddInvestment(parsed, note.trim());
-    setModalVisible(false);
+
+    // Validar que haya suficiente saldo si la fuente no es externa
+    if (selectedSource === 'ingresado') {
+      const available = totalIngresado ?? 0;
+      if (parsed > available) {
+        Alert.alert(
+          'Saldo insuficiente',
+          `El monto ($${formatCurrency(parsed)}) supera el Total Ingresado disponible ($${formatCurrency(available)}).`
+        );
+        return;
+      }
+    } else if (selectedSource === 'ganancia') {
+      const available = gananciaVentas ?? 0;
+      if (parsed > available) {
+        Alert.alert(
+          'Saldo insuficiente',
+          `El monto ($${formatCurrency(parsed)}) supera la Ganancia disponible ($${formatCurrency(available)}).`
+        );
+        return;
+      }
+    }
+
+    onAddInvestment && onAddInvestment(parsed, note.trim(), selectedSource);
+    setAddModalVisible(false);
   };
 
   const ACCENT = ['#059669', '#047857'];
+  const activeSource = INVESTMENT_SOURCES.find((s) => s.key === selectedSource);
 
   return (
     <View style={styles.cardWrapper}>
@@ -492,19 +558,16 @@ function InvestmentCard({ totalInvested, investments, isLoading, onAddInvestment
         <View style={[styles.topDivider, { backgroundColor: '#059669' }]} />
 
         <View style={styles.cardInner}>
-          {/* Fila superior: ícono + botón agregar */}
+          {/* Fila superior: ícono + menú de 3 puntos */}
           <View style={styles.cardTopRow}>
             <View style={[styles.iconBg, { backgroundColor: '#ECFDF5' }]}>
               <Ionicons name="wallet-outline" size={16} color="#059669" />
             </View>
-            <TouchableOpacity
-              onPress={() => setModalVisible(true)}
-              style={investStyles.addBtn}
-              activeOpacity={0.7}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons name="add" size={22} color="#059669" />
-            </TouchableOpacity>
+            <OptionsMenu
+              onEdit={() => setAdjustModalVisible(true)}
+              onReset={onReset}
+              accentColor="#059669"
+            />
           </View>
 
           {/* Etiqueta */}
@@ -515,25 +578,49 @@ function InvestmentCard({ totalInvested, investments, isLoading, onAddInvestment
             <ActivityIndicator size="small" color="#059669" style={styles.loader} />
           ) : (
             <Text style={[styles.statValue, { color: '#059669' }]} numberOfLines={1} adjustsFontSizeToFit>
-              ${formatCurrency(totalInvested)}
+              ${formatCurrency(displayValue)}
             </Text>
           )}
 
-          {/* Último registro */}
-          {investments && investments.length > 0 && (
-            <View style={investStyles.lastEntry}>
-              <Ionicons name="time-outline" size={10} color="#9CA3AF" />
-              <Text style={investStyles.lastEntryText} numberOfLines={1}>
-                Último: ${formatCurrency(investments[investments.length - 1]?.amount)} 
-              </Text>
-            </View>
-          )}
+          {/* Fila inferior: último registro a la izquierda + botón Registrar a la derecha */}
+          <View style={investStyles.bottomRow}>
+            {investments && investments.length > 0 ? (
+              <View style={investStyles.lastEntry}>
+                <Ionicons name="time-outline" size={10} color="#9CA3AF" />
+                <Text style={investStyles.lastEntryText} numberOfLines={1}>
+                  Último: ${formatCurrency(investments[investments.length - 1]?.amount)} 
+                </Text>
+              </View>
+            ) : (
+              <View style={{ flex: 1 }} />
+            )}
+
+            <TouchableOpacity
+              onPress={() => setAddModalVisible(true)}
+              style={investStyles.registerBtn}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="add-circle-outline" size={14} color="#059669" />
+              <Text style={investStyles.registerBtnText}>Registrar</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
+      {/* Modal para ajustar monto directamente */}
+      <AdjustModal
+        visible={adjustModalVisible}
+        label="Dinero Invertido"
+        currentValue={displayValue}
+        isCurrency
+        accentColors={ACCENT}
+        onSave={(val, reason) => onEditValue && onEditValue(val, reason)}
+        onClose={() => setAdjustModalVisible(false)}
+      />
+
       {/* Modal para agregar inversión */}
-      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
-        <TouchableWithoutFeedback onPress={() => setModalVisible(false)}>
+      <Modal visible={addModalVisible} transparent animationType="slide" onRequestClose={() => setAddModalVisible(false)}>
+        <TouchableWithoutFeedback onPress={() => setAddModalVisible(false)}>
           <View style={modalStyles.overlay}>
             <TouchableWithoutFeedback>
               <View style={[modalStyles.sheet, { marginBottom: kbHeight }]}>
@@ -548,13 +635,61 @@ function InvestmentCard({ totalInvested, investments, isLoading, onAddInvestment
                     <Text style={modalStyles.title}>Registrar Inversión</Text>
                     <Text style={modalStyles.subtitle}>Agrega el monto invertido</Text>
                   </View>
-                  <TouchableOpacity onPress={() => setModalVisible(false)} style={modalStyles.closeBtn}>
+                  <TouchableOpacity onPress={() => setAddModalVisible(false)} style={modalStyles.closeBtn}>
                     <Ionicons name="close" size={22} color="#8E8E93" />
                   </TouchableOpacity>
                 </View>
 
+                {/* ── Selector de fuente ── */}
+                <Text style={[modalStyles.reasonLabel, { marginBottom: 10 }]}>¿De dónde proviene el dinero?</Text>
+                <View style={investStyles.sourceRow}>
+                  {INVESTMENT_SOURCES.map((src) => {
+                    const isActive = selectedSource === src.key;
+                    return (
+                      <TouchableOpacity
+                        key={src.key}
+                        style={[
+                          investStyles.sourceChip,
+                          { borderColor: isActive ? src.color : '#E5E7EB' },
+                          isActive && { backgroundColor: src.bg },
+                        ]}
+                        onPress={() => setSelectedSource(src.key)}
+                        activeOpacity={0.75}
+                      >
+                        <Ionicons
+                          name={src.icon}
+                          size={14}
+                          color={isActive ? src.color : '#9CA3AF'}
+                        />
+                        <Text
+                          style={[
+                            investStyles.sourceChipText,
+                            { color: isActive ? src.color : '#6B7280' },
+                            isActive && { fontWeight: '700' },
+                          ]}
+                        >
+                          {src.label}
+                        </Text>
+                        {isActive && (
+                          <Ionicons name="checkmark-circle" size={13} color={src.color} />
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* Descripción de la fuente seleccionada */}
+                {activeSource && (
+                  <View style={[investStyles.sourceDesc, { backgroundColor: activeSource.bg, borderColor: activeSource.color + '33' }]}>
+                    <Ionicons name="information-circle-outline" size={14} color={activeSource.color} />
+                    <Text style={[investStyles.sourceDescText, { color: activeSource.color }]}>
+                      {activeSource.desc}
+                    </Text>
+                  </View>
+                )}
+
                 {/* Campo de monto */}
-                <View style={[modalStyles.inputWrapper, { borderColor: ACCENT[0] + '55' }]}>
+                <View style={[modalStyles.inputWrapper, { borderColor: ACCENT[0] + '55', marginTop: 14 }]}>
                   <Text style={[modalStyles.currency, { color: ACCENT[0] }]}>$</Text>
                   <TextInput
                     style={modalStyles.input}
@@ -584,7 +719,7 @@ function InvestmentCard({ totalInvested, investments, isLoading, onAddInvestment
 
                 {/* Botones */}
                 <View style={modalStyles.btnRow}>
-                  <TouchableOpacity onPress={() => setModalVisible(false)} style={modalStyles.cancelBtn} activeOpacity={0.7}>
+                  <TouchableOpacity onPress={() => setAddModalVisible(false)} style={modalStyles.cancelBtn} activeOpacity={0.7}>
                     <Text style={modalStyles.cancelText}>Cancelar</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={handleSave} activeOpacity={0.8} style={{ flex: 1 }}>
@@ -656,10 +791,47 @@ const StatsCards = ({ userData, onAdjust }) => {
 
   // Overrides locales por tarjeta
   const [overrides, setOverrides] = useState({});
-  const setOverride = (key, val, reason) => {
+  const setOverride = async (key, val, reason) => {
     setOverrides((prev) => ({ ...prev, [key]: val }));
     if (onAdjust) {
       onAdjust(key, val, reason);
+    }
+
+    const CARD_LABELS = {
+      ingresado: 'Total Ingresado',
+      deudas: 'Deudas Pendientes',
+      ganancia: 'Ganancia por Ventas',
+      ventas: 'Ventas de hoy',
+      inversion: 'Dinero Invertido',
+      recurrentes: 'Pagos Recurrentes',
+    };
+
+    const cardTitle = CARD_LABELS[key] || 'Monto';
+    const now = Date.now();
+    const adjTx = {
+      id: `adj_${now}_${Math.random().toString(36).substring(2, 7)}`,
+      clientId: 'global',
+      clientName: `Ajuste: ${cardTitle}`,
+      type: 'adjustment',
+      amount: val,
+      title: `Ajuste de ${cardTitle}`,
+      description: reason ? `Motivo: ${reason}` : `Ajuste manual de ${cardTitle}`,
+      rawDescription: reason || `Ajuste manual de ${cardTitle}`,
+      date: new Date(now).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }),
+      createdAt: now,
+    };
+
+    if (user?.uid) {
+      try {
+        await insertTransaction(user.uid, adjTx);
+        DeviceEventEmitter.emit('local-db-changed');
+      } catch (err) {
+        console.error('Error saving adjustment transaction:', err);
+      }
+    }
+
+    if (addTransactionOptimistic) {
+      addTransactionOptimistic(adjTx);
     }
   };
   const resetOverride = (key) => {
@@ -701,16 +873,20 @@ const StatsCards = ({ userData, onAdjust }) => {
     };
   }, [user]);
 
-  const handleAddInvestment = async (amount, note) => {
+  const handleAddInvestment = async (amount, note, source) => {
     const now = Date.now();
+    const sourceLabels = { ingresado: 'Total Ingresado', ganancia: 'Ganancia', externo: 'Externo' };
+    const sourceLabel = sourceLabels[source] || 'Externo';
+
     const invTx = {
       id: `inv_${now}_${Math.random().toString(36).substring(2, 7)}`,
       clientId: 'investment',
       clientName: 'Inversión en Negocio',
       type: 'investment',
       amount: amount,
-      title: note ? `Inversión: ${note}` : 'Inversión al negocio',
-      description: note || 'Dinero invertido en el negocio',
+      source: source || 'externo',
+      title: note ? `Inversión: ${note}` : `Inversión al negocio (${sourceLabel})`,
+      description: note || `Dinero invertido en el negocio desde ${sourceLabel}`,
       date: new Date(now).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }),
       createdAt: now,
     };
@@ -802,8 +978,30 @@ const StatsCards = ({ userData, onAdjust }) => {
         ganancia += profit;
       }
     }
+
+    // Descontar inversiones de hoy (persistente)
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    
+    let deductedIngresado = 0;
+    let deductedGanancia = 0;
+
+    for (const inv of investments) {
+      // Filtrar solo las de hoy (o usar la fecha de la inversión)
+      if (inv.createdAt >= startOfToday) {
+        if (inv.source === 'ingresado') {
+          deductedIngresado += (inv.amount || 0);
+        } else if (inv.source === 'ganancia') {
+          deductedGanancia += (inv.amount || 0);
+        }
+      }
+    }
+
+    ventasAmount = Math.max(0, ventasAmount - deductedIngresado);
+    ganancia = Math.max(0, ganancia - deductedGanancia);
+
     return { gananciaVentas: ganancia, totalVentasAmount: ventasAmount, totalVentas: todaySalesFiltered.length, productosRegistrados: products.length };
-  }, [todaySalesFiltered, products]);
+  }, [todaySalesFiltered, products, investments]);
 
   return (
     <View style={styles.container}>
@@ -880,6 +1078,11 @@ const StatsCards = ({ userData, onAdjust }) => {
               investments={investments}
               isLoading={false}
               onAddInvestment={handleAddInvestment}
+              totalIngresado={overrides['ingresado'] ?? totalVentasAmount}
+              gananciaVentas={overrides['ganancia'] ?? gananciaVentas}
+              value={overrides['inversion']}
+              onEditValue={(v, r) => setOverride('inversion', v, r)}
+              onReset={() => resetOverride('inversion')}
             />
           </View>
         </>
@@ -1018,29 +1221,77 @@ const menuStyles = StyleSheet.create({
 
 // ─── Estilos de la tarjeta de inversión ───
 const investStyles = StyleSheet.create({
-  addBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lastEntry: {
+  bottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    justifyContent: 'space-between',
     marginTop: 8,
     paddingTop: 6,
     borderTopWidth: 1,
     borderTopColor: '#F0F2F7',
   },
+  lastEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+    marginRight: 6,
+  },
   lastEntryText: {
     fontSize: 10,
     color: '#9CA3AF',
     fontWeight: '500',
+  },
+  registerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  registerBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#059669',
+  },
+  sourceRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+    flexWrap: 'wrap',
+  },
+  sourceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    backgroundColor: '#F9FAFB',
+  },
+  sourceChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sourceDesc: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 4,
+  },
+  sourceDescText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
   },
 });
 
