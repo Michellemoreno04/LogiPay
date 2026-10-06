@@ -327,6 +327,40 @@ export default function UserDetailsScreen() {
       return;
     }
 
+    // Validar que no se abone más de lo que debe el cliente
+    if (transactionType === 'debt_payment' || transactionType === 'payment') {
+      let maxDebtToPay = client?.balance < 0 ? Math.abs(client.balance) : 0;
+      if (editingTransactionId) {
+        const oldTx = transactions.find((t) => t.id === editingTransactionId);
+        if (oldTx) {
+          if (oldTx.type === 'payment' || oldTx.type === 'debt_payment') {
+            maxDebtToPay += oldTx.amount;
+          } else if (oldTx.type === 'debt') {
+            maxDebtToPay = Math.max(0, maxDebtToPay - oldTx.amount);
+          }
+        }
+      }
+
+      maxDebtToPay = Math.round(maxDebtToPay * 100) / 100;
+      const roundedAmount = Math.round(parsedAmount * 100) / 100;
+
+      if (maxDebtToPay <= 0) {
+        Alert.alert(
+          'Sin deuda pendiente',
+          `${client?.name || 'El cliente'} no tiene deuda pendiente para abonar.`
+        );
+        return;
+      }
+
+      if (roundedAmount > maxDebtToPay) {
+        Alert.alert(
+          'Monto excede la deuda',
+          `No puedes pagar más de lo que debe el cliente. La deuda actual es de $${formatCurrency(maxDebtToPay)}.`
+        );
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       if (editingTransactionId) {

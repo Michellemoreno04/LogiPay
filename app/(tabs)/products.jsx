@@ -17,18 +17,16 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   useWindowDimensions,
   Vibration,
-  View,
+  View
 } from 'react-native';
 import { SnappySpringConfig, TourProvider, TourZone, useTour } from 'react-native-lumen';
 import { Camera, useCameraDevice, useCameraPermission, useCodeScanner } from 'react-native-vision-camera';
 import { useAuth } from '../../authContext/authContext';
 import SaleModal from '../../components/modales/SaleModal';
 import { useLocalData } from '../../context/LocalDataContext';
-import { getSalesByProduct } from '../../utils/database';
-import { deleteProduct, recordSale } from '../../utils/productService';
+import { recordSale } from '../../utils/productService';
 
 const CATEGORIES = [
   { id: 'todos', label: 'Todos', icon: 'apps-outline', color: '#4C669F' },
@@ -74,8 +72,6 @@ function ProductsScreenContent() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('todos');
-  const [menuProduct, setMenuProduct] = useState(null);
-  const [menuAnchor, setMenuAnchor] = useState({ x: 0, y: 0 });
 
   // Scanner state
   const [scannerVisible, setScannerVisible] = useState(false);
@@ -144,48 +140,6 @@ function ProductsScreenContent() {
 
   const handleOpenCreate = () => {
     router.push('/add-product');
-  };
-
-  const handleOpenEdit = (product) => {
-    router.push({
-      pathname: '/add-product',
-      params: {
-        productId: product.id,
-      },
-    });
-  };
-
-  const handleDelete = (product) => {
-    Alert.alert(
-      'Eliminar Producto',
-      `¿Seguro que quieres eliminar "${product.name}"? También se eliminarán sus ventas registradas.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const sales = await getSalesByProduct(user.uid, product.id);
-              let debtToRevert = 0;
-              sales.forEach(s => debtToRevert += (s.totalAmount || 0));
-
-              await deleteProduct({ uid: user.uid, productId: product.id });
-              deleteProductOptimistic(product.id);
-
-              if (updateLocalUserData && debtToRevert > 0) {
-                updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) - debtToRevert });
-              }
-
-              DeviceEventEmitter.emit('products-db-changed');
-              DeviceEventEmitter.emit('local-db-changed');
-            } catch (e) {
-              Alert.alert('Error', 'No se pudo eliminar el producto.');
-            }
-          },
-        },
-      ]
-    );
   };
 
   const pressFab = () => {
@@ -342,33 +296,7 @@ function ProductsScreenContent() {
           onPress={() => router.push(`/product/${item.id}`)}
           activeOpacity={0.9}
         >
-          {/* Top bar on card: Stock Tag & 3-dots menu */}
-          <View style={styles.cardHeaderRow}>
-            {item.stock !== undefined && item.stock !== null ? (
-              <View style={[styles.stockBadge, isOutOfStock ? styles.stockBadgeRed : styles.stockBadgeBlue]}>
-                <Text style={[styles.stockBadgeText, isOutOfStock && styles.stockBadgeTextRed]}>
-                  {isOutOfStock ? 'Agotado' : `${item.stock} disp.`}
-                </Text>
-              </View>
-            ) : (
-              <View />
-            )}
-
-            <TouchableOpacity
-              style={styles.cardActionIcon}
-              onPress={(e) => {
-                const { pageX, pageY } = e.nativeEvent;
-                setMenuAnchor({ x: pageX, y: pageY });
-                setMenuProduct(item);
-              }}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              activeOpacity={0.6}
-            >
-              <Ionicons name="ellipsis-vertical" size={16} color="#64748B" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Product Image (Takes full width of the card) */}
+          {/* Product Image (Takes top area of card) */}
           <View style={styles.cardImageWrapper}>
             {item.photoUri ? (
               <Image
@@ -392,35 +320,46 @@ function ProductsScreenContent() {
 
           {/* Info Container */}
           <View style={styles.cardInfoContainer}>
-            {/* Category Pill Slot */}
-            <View style={styles.categoryPillContainer}>
-              {categoryInfo && categoryInfo.id !== 'todos' ? (
-                <View style={styles.categoryPill}>
-                  <Text style={styles.categoryPillText} numberOfLines={1}>
-                    {categoryInfo.label}
+            <View style={styles.cardHeaderDetails}>
+              {/* Category Pill Slot (Always present to keep uniform height) */}
+              <View style={styles.categoryPillContainer}>
+                <View style={[styles.categoryPill, (!categoryInfo || categoryInfo.id === 'todos') && styles.categoryPillDefault]}>
+                  <Text style={[styles.categoryPillText, (!categoryInfo || categoryInfo.id === 'todos') && styles.categoryPillTextDefault]} numberOfLines={1}>
+                    {categoryInfo && categoryInfo.id !== 'todos' ? categoryInfo.label : 'General'}
                   </Text>
                 </View>
-              ) : null}
+              </View>
+
+              {/* Product Name */}
+              <Text style={styles.cardTitle} numberOfLines={2}>
+                {item.name}
+              </Text>
+
+              {/* Product Description Slot (Always present) */}
+              <Text style={styles.cardSubtitle} numberOfLines={1}>
+                {item.description && item.description.trim() ? item.description : 'Sin descripción'}
+              </Text>
             </View>
 
-            {/* Product Name & Subtitle */}
-            <Text style={styles.cardTitle} numberOfLines={2}>
-              {item.name}
-            </Text>
-
-            <Text style={styles.cardSubtitle} numberOfLines={1}>
-              {item.description || ''}
-            </Text>
-
-            {/* Bottom Price Row */}
+            {/* Bottom Row: Price & Stock Badge at the very bottom */}
             <View style={styles.cardBottomRow}>
-              <Text style={styles.cardPrice}>
-                ${parseFloat(item.price || 0).toFixed(2)}
-              </Text>
-              {item.buyPrice && parseFloat(item.buyPrice) > 0 ? (
-                <Text style={styles.cardCostPrice}>
-                  Costo: ${parseFloat(item.buyPrice).toFixed(2)}
+              <View style={styles.cardPriceCol}>
+                <Text style={styles.cardPrice}>
+                  ${parseFloat(item.price || 0).toFixed(2)}
                 </Text>
+                {item.buyPrice && parseFloat(item.buyPrice) > 0 ? (
+                  <Text style={styles.cardCostPrice}>
+                    Costo: ${parseFloat(item.buyPrice).toFixed(2)}
+                  </Text>
+                ) : null}
+              </View>
+
+              {item.stock !== undefined && item.stock !== null ? (
+                <View style={[styles.stockBadge, isOutOfStock ? styles.stockBadgeRed : styles.stockBadgeBlue]}>
+                  <Text style={[styles.stockBadgeText, isOutOfStock && styles.stockBadgeTextRed]}>
+                    {isOutOfStock ? 'no stock' : `${item.stock} disp.`}
+                  </Text>
+                </View>
               ) : null}
             </View>
           </View>
@@ -432,58 +371,6 @@ function ProductsScreenContent() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-
-      {/* ─── Floating Options Dropdown Modal ─── */}
-      <Modal
-        visible={!!menuProduct}
-        transparent
-        animationType="none"
-        onRequestClose={() => setMenuProduct(null)}
-      >
-        <TouchableWithoutFeedback onPress={() => setMenuProduct(null)}>
-          <View style={styles.dropdownModalOverlay}>
-            <TouchableWithoutFeedback>
-              <View
-                style={[
-                  styles.dropdownMenuFloating,
-                  {
-                    top: Math.min(menuAnchor.y + 8, height - 130),
-                    left: Math.max(16, Math.min(menuAnchor.x - 120, width - 150)),
-                  },
-                ]}
-              >
-                <TouchableOpacity
-                  style={styles.dropdownMenuItem}
-                  onPress={() => {
-                    const prod = menuProduct;
-                    setMenuProduct(null);
-                    if (prod) handleOpenEdit(prod);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="create-outline" size={16} color="#2D3A8C" />
-                  <Text style={styles.dropdownMenuText}>Editar</Text>
-                </TouchableOpacity>
-
-                <View style={styles.dropdownMenuDivider} />
-
-                <TouchableOpacity
-                  style={styles.dropdownMenuItem}
-                  onPress={() => {
-                    const prod = menuProduct;
-                    setMenuProduct(null);
-                    if (prod) handleDelete(prod);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="trash-outline" size={16} color="#FF3B30" />
-                  <Text style={[styles.dropdownMenuText, { color: '#FF3B30' }]}>Eliminar</Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
 
       {/* ─── Header Gradient ─── */}
       <LinearGradient
@@ -568,9 +455,6 @@ function ProductsScreenContent() {
         renderItem={renderProduct}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
-        onScrollBeginDrag={() => {
-          if (menuProduct) setMenuProduct(null);
-        }}
         ListHeaderComponent={
           filteredProducts.length > 0 ? (
             <Text style={styles.sectionLabel}>
@@ -845,28 +729,110 @@ const styles = StyleSheet.create({
   // Square Product Card
   productCard: {
     backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 10,
-    height: 280,
+    borderRadius: 16,
+    padding: 9,
+    height: 220,
     borderWidth: 1,
     borderColor: '#EBF0F5',
     shadowColor: '#4C669F',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
     elevation: 3,
     justifyContent: 'space-between',
   },
-  cardHeaderRow: {
+  cardImageWrapper: {
+    width: '100%',
+    height: 95,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  cardProductImage: {
+    width: '100%',
+    height: '100%',
+  },
+  cardImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardInfoContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingTop: 1,
+  },
+  cardHeaderDetails: {
+    gap: 1,
+  },
+  categoryPillContainer: {
+    height: 18,
+    justifyContent: 'center',
+    marginBottom: 1,
+  },
+  categoryPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#EDF2F7',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+  },
+  categoryPillDefault: {
+    backgroundColor: '#F1F5F9',
+  },
+  categoryPillText: {
+    fontSize: 9.5,
+    fontWeight: '600',
+    color: '#4A5568',
+    textTransform: 'capitalize',
+  },
+  categoryPillTextDefault: {
+    color: '#94A3B8',
+  },
+  cardTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#1A202C',
+    lineHeight: 16,
+    height: 32,
+  },
+  cardSubtitle: {
+    fontSize: 10.5,
+    color: '#94A3B8',
+    height: 14,
+    lineHeight: 14,
+    marginTop: 1,
+  },
+  cardBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    height: 26,
+    marginTop: 'auto',
+    paddingTop: 2,
+  },
+  cardPriceCol: {
+    flexDirection: 'column',
+  },
+  cardPrice: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1A202C',
+    letterSpacing: -0.3,
+  },
+  cardCostPrice: {
+    fontSize: 10,
+    color: '#A0AEC0',
+    fontWeight: '500',
   },
   stockBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2.5,
-    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   stockBadgeBlue: {
     backgroundColor: '#E8F1FD',
@@ -881,125 +847,6 @@ const styles = StyleSheet.create({
   },
   stockBadgeTextRed: {
     color: '#E53E3E',
-  },
-  cardActionIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F8FAFC',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardImageWrapper: {
-    width: '100%',
-    height: 115,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#F8FAFC',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 4,
-  },
-  cardProductImage: {
-    width: '100%',
-    height: '100%',
-  },
-  cardImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardInfoContainer: {
-    flex: 1,
-    justifyContent: 'space-between',
-    paddingTop: 2,
-  },
-  categoryPillContainer: {
-    height: 20,
-    justifyContent: 'center',
-  },
-  categoryPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#EDF2F7',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  categoryPillText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#4A5568',
-    textTransform: 'capitalize',
-  },
-  cardTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1A202C',
-    lineHeight: 17,
-    height: 34,
-    marginTop: 2,
-  },
-  cardSubtitle: {
-    fontSize: 11,
-    color: '#718096',
-    height: 16,
-    lineHeight: 16,
-  },
-  cardBottomRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-
-  },
-  cardPrice: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#1A202C',
-    letterSpacing: -0.3,
-  },
-  cardCostPrice: {
-    fontSize: 10.5,
-    color: '#A0AEC0',
-    fontWeight: '500',
-  },
-
-  // Dropdown Menu
-  dropdownModalOverlay: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  dropdownMenuFloating: {
-    position: 'absolute',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    paddingVertical: 4,
-    width: 140,
-    shadowColor: '#1A1F4B',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    elevation: 12,
-    borderWidth: 1,
-    borderColor: '#ECEEF4',
-  },
-  dropdownMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-  },
-  dropdownMenuDivider: {
-    height: 1,
-    backgroundColor: '#F0F2F7',
-    marginHorizontal: 8,
-  },
-  dropdownMenuText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
   },
 
   // Empty

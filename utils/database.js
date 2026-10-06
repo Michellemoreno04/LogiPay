@@ -323,6 +323,51 @@ export const getClientById = async (uid, clientId) => {
   }
 };
 
+/**
+ * Recalcula el balance de un cliente sumando todas sus transacciones en SQLite.
+ * Esto elimina cualquier race condition con actualizaciones incrementales.
+ *
+ * Lógica de balance:
+ *   debt            → resta al balance (cliente debe dinero)   → -amount
+ *   payment         → suma al balance (cliente pagó / a favor) → +amount
+ *   debt_payment    → suma al balance (abona deuda)            → +amount
+ *   recurring_payment → no afecta balance                      →  0
+ *
+ * Al final, persiste el valor calculado en la tabla clients y lo retorna.
+ */
+export const recalcClientBalance = async (uid, clientId) => {
+  try {
+    const database = await initDB();
+
+    const row = await database.getFirstAsync(
+      `SELECT
+         COALESCE(SUM(
+           CASE
+             WHEN type = 'debt'              THEN -amount
+             WHEN type = 'payment'           THEN  amount
+             WHEN type = 'debt_payment'      THEN  amount
+             ELSE 0
+           END
+         ), 0) AS computedBalance
+       FROM transactions
+       WHERE uid = ? AND clientId = ?`,
+      [uid, clientId]
+    );
+
+    const newBalance = row?.computedBalance ?? 0;
+
+    await database.runAsync(
+      'UPDATE clients SET balance = ? WHERE uid = ? AND id = ?',
+      [newBalance, uid, clientId]
+    );
+
+    return newBalance;
+  } catch (error) {
+    console.error('[recalcClientBalance] Error:', error);
+    throw error;
+  }
+};
+
 // ─── TRANSACCIONES ────────────────────────────────────────────────────────────
 
 export const insertTransaction = async (uid, tx) => {

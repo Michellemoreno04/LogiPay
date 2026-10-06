@@ -5,6 +5,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import { db } from '../firebaseConfig/config';
 import { addToOutbox, getPendingOutbox, getUserData, saveUserData } from '../utils/database';
+import { bootstrapFromFirebase } from '../utils/bootstrapSync';
 import { syncOutbox } from '../utils/syncEngine';
 
 const AuthContext = createContext({});
@@ -73,6 +74,13 @@ export default function AuthProvider({ children }) {
               // Guardar en SQLite para acceso offline
               await saveUserData(currentUser.uid, firebaseData);
               setUserData(firebaseData);
+
+              // Disparar bootstrap en background: si el dispositivo es nuevo y SQLite
+              // está vacío, descarga todos los datos (clientes, productos, etc.).
+              // Si ya hay datos locales, la función retorna false inmediatamente.
+              bootstrapFromFirebase(currentUser.uid, firebaseData).catch((e) =>
+                console.warn('[auth] bootstrapFromFirebase error:', e)
+              );
             } else {
               // Documento no existe en Firebase, mantener lo que hay en SQLite
               const localData = await getUserData(currentUser.uid);

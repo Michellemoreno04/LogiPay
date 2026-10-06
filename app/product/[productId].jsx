@@ -9,22 +9,24 @@ import {
   DeviceEventEmitter,
   FlatList,
   Image,
+  Modal,
   Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { useAuth } from '../../authContext/authContext';
 import SaleModal from '../../components/modales/SaleModal';
 import { useLocalData } from '../../context/LocalDataContext';
 import { getSalesByProduct } from '../../utils/database';
-import { deleteSale, recordSale } from '../../utils/productService';
+import { deleteProduct, deleteSale, recordSale } from '../../utils/productService';
 
 export default function ProductDetailScreen() {
   const { productId } = useLocalSearchParams();
   const { user, userData, updateLocalUserData } = useAuth();
-  const { products, clients, addSaleOptimistic, deleteSaleOptimistic, addTransactionOptimistic } = useLocalData();
+  const { products, clients, addSaleOptimistic, deleteSaleOptimistic, deleteProductOptimistic, addTransactionOptimistic } = useLocalData();
 
 
   const product = products.find((p) => p.id === productId);
@@ -33,6 +35,7 @@ export default function ProductDetailScreen() {
   const [loadingSales, setLoadingSales] = useState(true);
   const [saleModalVisible, setSaleModalVisible] = useState(false);
   const [savingSale, setSavingSale] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
 
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const headerSlide = useRef(new Animated.Value(-20)).current;
@@ -168,6 +171,50 @@ export default function ProductDetailScreen() {
     );
   };
 
+  const handleOpenEdit = () => {
+    setMenuVisible(false);
+    if (!product) return;
+    router.push({
+      pathname: '/add-product',
+      params: { productId: product.id },
+    });
+  };
+
+  const handleDeleteProduct = () => {
+    setMenuVisible(false);
+    if (!product || !user) return;
+    Alert.alert(
+      'Eliminar Producto',
+      `¿Seguro que quieres eliminar "${product.name}"? También se eliminarán sus ventas registradas.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              let debtToRevert = 0;
+              sales.forEach((s) => (debtToRevert += s.totalAmount || 0));
+
+              await deleteProduct({ uid: user.uid, productId: product.id });
+              deleteProductOptimistic(product.id);
+
+              if (updateLocalUserData && debtToRevert > 0) {
+                updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) - debtToRevert });
+              }
+
+              DeviceEventEmitter.emit('products-db-changed');
+              DeviceEventEmitter.emit('local-db-changed');
+              router.back();
+            } catch (e) {
+              Alert.alert('Error', 'No se pudo eliminar el producto.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const totalRevenue = sales.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
   const totalUnitsSold = sales.reduce((sum, s) => sum + (s.quantity || 0), 0);
 
@@ -231,10 +278,21 @@ export default function ProductDetailScreen() {
         <View style={styles.decorCircle1} />
         <View style={styles.decorCircle2} />
 
-        {/* Back button */}
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={22} color="#fff" />
-        </TouchableOpacity>
+        {/* Top Header Navigation */}
+        <View style={styles.headerTopRow}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={22} color="#fff" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.optionsBtn}
+            onPress={() => setMenuVisible(true)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="ellipsis-vertical" size={20} color="#fff" />
+          </TouchableOpacity>
+        </View>
 
         <Animated.View
           style={[styles.headerContent, { opacity: headerOpacity, transform: [{ translateY: headerSlide }] }]}
@@ -339,7 +397,7 @@ export default function ProductDetailScreen() {
 
 
       {/* ─── Sale Modal ─── */}
-      < SaleModal
+      <SaleModal
         visible={saleModalVisible}
         onClose={() => setSaleModalVisible(false)}
         onSave={handleRecordSale}
@@ -347,6 +405,42 @@ export default function ProductDetailScreen() {
         clients={clients}
         loading={savingSale}
       />
+
+      {/* ─── Options Modal ─── */}
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setMenuVisible(false)}>
+          <View style={styles.menuModalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.menuFloatingCard}>
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={handleOpenEdit}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="create-outline" size={18} color="#2D3A8C" />
+                  <Text style={styles.menuItemText}>Editar producto</Text>
+                </TouchableOpacity>
+
+                <View style={styles.menuDivider} />
+
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={handleDeleteProduct}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#FF3B30" />
+                  <Text style={[styles.menuItemText, { color: '#FF3B30' }]}>Eliminar producto</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </View>
   );
 }
@@ -387,6 +481,13 @@ const styles = StyleSheet.create({
     bottom: -20,
     left: -30,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    zIndex: 2,
+  },
   backBtn: {
     width: 40,
     height: 40,
@@ -394,8 +495,52 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
-    alignSelf: 'flex-start',
+  },
+  optionsBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: Platform.OS === 'android' ? 50 : 60,
+    paddingRight: 20,
+  },
+  menuFloatingCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    paddingVertical: 6,
+    width: 180,
+    shadowColor: '#1A1F4B',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: '#ECEEF4',
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  menuDivider: {
+    height: 1,
+    backgroundColor: '#F0F2F7',
+    marginHorizontal: 10,
+  },
+  menuItemText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1A202C',
   },
   headerContent: { alignItems: 'center', zIndex: 1 },
   productIconBig: {

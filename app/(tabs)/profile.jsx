@@ -154,7 +154,7 @@ export default function ProfileScreen() {
 
         </View>
 
-        <Text style={styles.version}>LogiPay v2.0.0</Text>
+        <Text style={styles.version}>LogiPay v2.0.1</Text>
       </ScrollView>
     </SafeAreaView>
   );

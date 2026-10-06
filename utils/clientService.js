@@ -9,6 +9,7 @@ import {
   getTransactionsByClient,
   insertClient,
   insertTransaction,
+  recalcClientBalance,
   updateClient,
   updateTransaction,
   updateUserDataField,
@@ -175,13 +176,9 @@ export const addTransaction = async ({ uid, clientId, type, amount, title, descr
     createdAt: now,
   });
 
-  // 2. Actualizar balance del cliente en SQLite
-  const clientAfter = await getClientById(uid, clientId);
-  if (clientAfter) {
-    await updateClient(uid, clientId, {
-      balance: (clientAfter.balance || 0) + balanceChange,
-    });
-  }
+  // 2. Recalcular balance desde cero (fuente de verdad: suma de transacciones).
+  //    Esto evita race conditions con lecturas/escrituras incrementales.
+  const newBalance = await recalcClientBalance(uid, clientId);
 
   // 3. Actualizar totales del usuario en SQLite
   if (debtChange !== 0) await updateUserDataField(uid, 'totalDebt', debtChange);
@@ -193,9 +190,8 @@ export const addTransaction = async ({ uid, clientId, type, amount, title, descr
     { type, amount, title, description, createdAt: 'SERVER_TIMESTAMP' },
     'set'
   );
-  if (balanceChange !== 0) {
-    await addToOutbox(`users/${uid}/clients`, clientId, { balance: `INCREMENT_${balanceChange}` }, 'update');
-  }
+  // Sincronizar el balance calculado (no incremental) a Firebase
+  await addToOutbox(`users/${uid}/clients`, clientId, { balance: newBalance }, 'update');
   if (debtChange !== 0) {
     await addToOutbox('users', uid, { totalDebt: `INCREMENT_${debtChange}` }, 'update');
   }
@@ -250,15 +246,9 @@ export const editTransaction = async ({
     description: newDescription || '',
   });
 
-  // 2. Actualizar balance del cliente en SQLite
-  if (netBalanceChange !== 0) {
-    const client = await getClientById(uid, clientId);
-    if (client) {
-      await updateClient(uid, clientId, {
-        balance: (client.balance || 0) + netBalanceChange,
-      });
-    }
-  }
+  // 2. Recalcular balance desde cero (fuente de verdad: suma de transacciones).
+  //    Esto evita errores con la lógica especial de debt_payment y race conditions.
+  const newBalance = await recalcClientBalance(uid, clientId);
 
   // 3. Actualizar totales del usuario en SQLite
   if (debtDiff !== 0) await updateUserDataField(uid, 'totalDebt', debtDiff);
@@ -270,9 +260,8 @@ export const editTransaction = async ({
     { type: newType, amount: newAmount, title: newTitle, description: newDescription },
     'update'
   );
-  if (netBalanceChange !== 0) {
-    await addToOutbox(`users/${uid}/clients`, clientId, { balance: `INCREMENT_${netBalanceChange}` }, 'update');
-  }
+  // Sincronizar el balance calculado (no incremental) a Firebase
+  await addToOutbox(`users/${uid}/clients`, clientId, { balance: newBalance }, 'update');
   if (debtDiff !== 0) {
     await addToOutbox('users', uid, { totalDebt: `INCREMENT_${debtDiff}` }, 'update');
   }
@@ -296,22 +285,17 @@ export const deleteTransaction = async ({ uid, clientId, txId, type, amount }) =
   // 1. Eliminar transacción de SQLite
   await deleteTransactionDB(uid, txId);
 
-  // 2. Actualizar balance del cliente en SQLite
-  const client = await getClientById(uid, clientId);
-  if (client) {
-    await updateClient(uid, clientId, {
-      balance: (client.balance || 0) + balanceChange,
-    });
-  }
+  // 2. Recalcular balance desde cero (fuente de verdad: suma de transacciones).
+  //    Al borrar primero y recalcular después, el resultado siempre es correcto.
+  const newBalance = await recalcClientBalance(uid, clientId);
 
   // 3. Actualizar totales del usuario en SQLite
   if (debtDiff !== 0) await updateUserDataField(uid, 'totalDebt', debtDiff);
 
   // 4. Encolar en outbox
   await addToOutbox(`users/${uid}/clients/${clientId}/transactions`, txId, null, 'delete');
-  if (balanceChange !== 0) {
-    await addToOutbox(`users/${uid}/clients`, clientId, { balance: `INCREMENT_${balanceChange}` }, 'update');
-  }
+  // Sincronizar el balance calculado (no incremental) a Firebase
+  await addToOutbox(`users/${uid}/clients`, clientId, { balance: newBalance }, 'update');
   if (debtDiff !== 0) {
     await addToOutbox('users', uid, { totalDebt: `INCREMENT_${debtDiff}` }, 'update');
   }
