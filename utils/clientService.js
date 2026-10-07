@@ -4,15 +4,13 @@ import {
   addToOutbox,
   deleteClientDB,
   deleteTransactionDB,
-  getClientById,
-  getClients,
   getTransactionsByClient,
   insertClient,
   insertTransaction,
   recalcClientBalance,
   updateClient,
   updateTransaction,
-  updateUserDataField,
+  updateUserDataField
 } from './database';
 
 const formatServiceDate = (date) => {
@@ -142,16 +140,12 @@ export const addTransaction = async ({ uid, clientId, type, amount, title, descr
 
   if (type === 'recurring_payment') {
     // Pago de cuota mensual: solo se registra como evento, NO toca balance ni deuda.
-    // Para abonar a la deuda, se usa 'debt_payment' desde el perfil del cliente.
     balanceChange = 0;
     debtChange = 0;
   } else if (type === 'debt_payment') {
-    // Solo reduce deuda: el balance sube hacia 0 como máximo
-    const client = await getClientById(uid, clientId);
-    const currentBalance = client?.balance || 0;
-    // No permitir que el balance supere 0 (solo cancela deuda)
-    balanceChange = Math.min(amount, Math.abs(Math.min(currentBalance, 0)));
-    debtChange = -balanceChange;
+    // Abono a deuda: puede cancelar la deuda y generar saldo a favor si el monto supera la deuda
+    balanceChange = amount;
+    debtChange = -amount;
   } else if (type === 'payment') {
     balanceChange = amount;
     debtChange = -amount;
@@ -335,3 +329,4 @@ export const deleteClient = async ({ uid, clientId, transactions }) => {
 
   return { totalDebtReverted };
 };
+

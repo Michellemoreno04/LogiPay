@@ -148,6 +148,7 @@ export default function ClientDetailsModals({
                 </View>
               )}
 
+
               {/* Monto */}
               <Text style={styles.inputLabel}>Monto *</Text>
               <View style={styles.amountInputContainer}>
@@ -282,7 +283,18 @@ export default function ClientDetailsModals({
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.detailsTitle}>{selectedTransaction.title || selectedTransaction.description}</Text>
-                      <Text style={styles.detailsDate}>{selectedTransaction.date}</Text>
+                      <Text style={styles.detailsDate}>
+                        {selectedTransaction.date && selectedTransaction.date.includes('a las')
+                          ? selectedTransaction.date
+                          : selectedTransaction.createdAt
+                            ? (() => {
+                                const d = new Date(selectedTransaction.createdAt);
+                                const datePart = d.toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' });
+                                const timePart = d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true });
+                                return `${datePart} a las ${timePart}`;
+                              })()
+                            : selectedTransaction.date}
+                      </Text>
                     </View>
                   </View>
 
@@ -321,13 +333,44 @@ export default function ClientDetailsModals({
                         {isPayment ? '+' : '-'}${formatCurrency(selectedTransaction.amount)}
                       </Text>
 
-                      {/* Descripción (solo si existe y es diferente al título) */}
-                      {selectedTransaction.description && selectedTransaction.description !== selectedTransaction.title && (
-                        <>
-                          <Text style={[styles.detailsLabel, { marginTop: 16 }]}>Descripción</Text>
-                          <Text style={styles.detailsDescriptionText}>{selectedTransaction.description}</Text>
-                        </>
-                      )}
+                      {/* Monto anterior (balance previo capturado al guardar) */}
+                      {(() => {
+                        const rawDesc = selectedTransaction.description || '';
+                        const match = rawDesc.match(/__prevBalance:(-?[\d.]+)/);
+                        if (!match) return null;
+                        const prev = parseFloat(match[1]);
+                        const prevLabel = prev < 0 ? 'en deuda' : prev > 0 ? 'a favor' : 'en cero';
+                        const prevColor = prev < 0 ? '#FF3B30' : prev > 0 ? '#34C759' : '#8E8E93';
+                        const prevPrefix = prev < 0 ? '-' : prev > 0 ? '+' : '';
+                        return (
+                          <View style={styles.prevBalanceRow}>
+                            <Ionicons name="time-outline" size={14} color="#8E8E93" />
+                            <Text style={styles.prevBalanceLabel}>Saldo antes de esta transacción</Text>
+                            <Text style={[styles.prevBalanceAmount, { color: prevColor }]}>
+                              {prevPrefix}${formatCurrency(Math.abs(prev))}
+                              <Text style={styles.prevBalanceHint}> ({prevLabel})</Text>
+                            </Text>
+                          </View>
+                        );
+                      })()}
+
+                      {/* Descripción (solo si existe, diferente al título y no es metadata interna) */}
+                      {selectedTransaction.description &&
+                        selectedTransaction.description !== selectedTransaction.title &&
+                        (() => {
+                          const visibleDesc = selectedTransaction.description
+                            .split('\n')
+                            .filter(line => !line.startsWith('__prevBalance:'))
+                            .join('\n')
+                            .trim();
+                          if (!visibleDesc) return null;
+                          return (
+                            <>
+                              <Text style={[styles.detailsLabel, { marginTop: 16 }]}>Descripción</Text>
+                              <Text style={styles.detailsDescriptionText}>{visibleDesc}</Text>
+                            </>
+                          );
+                        })()}
                     </View>
                   )}
 
@@ -535,6 +578,33 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#4C669F',
+  },
+  balancePreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'white',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  balancePreviewLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  balancePreviewLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  balancePreviewAmount: {
+    fontSize: 16,
+    fontWeight: '800',
   },
   typeSelector: {
     flexDirection: 'row',
@@ -764,6 +834,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1C1C1E',
     lineHeight: 22,
+  },
+  prevBalanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 14,
+    backgroundColor: '#F9F9FB',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  prevBalanceLabel: {
+    flex: 1,
+    fontSize: 13,
+    color: '#8E8E93',
+    fontWeight: '500',
+  },
+  prevBalanceAmount: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  prevBalanceHint: {
+    fontSize: 12,
+    fontWeight: '400',
+    color: '#8E8E93',
   },
   detailsActions: {
     flexDirection: 'row',

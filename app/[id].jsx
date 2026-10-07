@@ -39,7 +39,58 @@ import { syncOutbox } from '../utils/syncEngine';
 const formatDate = (createdAt) => {
   if (!createdAt) return 'Pendiente...';
   const date = createdAt.toDate ? createdAt.toDate() : new Date(createdAt);
-  return date.toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' });
+  const datePart = date.toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' });
+  const timePart = date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return `${datePart} a las ${timePart}`;
+};
+
+/** Formatea fecha y hora separadas para mostrar debajo del icono */
+const formatIconDateTime = (item) => {
+  if (!item) return { dateStr: '', timeStr: '' };
+
+  let dateObj = null;
+  const rawTs = item.createdAt ?? item._date ?? item._timestamp;
+
+  if (rawTs) {
+    if (typeof rawTs.toDate === 'function') {
+      dateObj = rawTs.toDate();
+    } else if (rawTs instanceof Date) {
+      dateObj = rawTs;
+    } else if (typeof rawTs === 'number') {
+      const d = new Date(rawTs);
+      if (!isNaN(d.getTime())) dateObj = d;
+    } else if (typeof rawTs === 'string') {
+      const d = new Date(rawTs);
+      if (!isNaN(d.getTime())) dateObj = d;
+    }
+  }
+
+  if (dateObj) {
+    const day = dateObj.getDate();
+    const month = dateObj.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
+    const time = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return {
+      dateStr: `${day} ${month}`,
+      timeStr: time,
+    };
+  }
+
+  if (typeof item.date === 'string' && item.date) {
+    if (item.date.includes(' a las ')) {
+      const parts = item.date.split(' a las ');
+      const dateWords = parts[0].trim().split(' ');
+      const dateShort = dateWords.length >= 2 ? `${dateWords[0]} ${dateWords[1]}` : parts[0];
+      return {
+        dateStr: dateShort,
+        timeStr: parts[1]?.trim() || '',
+      };
+    }
+    const dateWords = item.date.trim().split(' ');
+    const dateShort = dateWords.length >= 2 ? `${dateWords[0]} ${dateWords[1]}` : item.date;
+    return { dateStr: dateShort, timeStr: '' };
+  }
+
+  return { dateStr: '', timeStr: '' };
 };
 
 
@@ -327,49 +378,15 @@ export default function UserDetailsScreen() {
       return;
     }
 
-    // Validar que no se abone más de lo que debe el cliente
-    if (transactionType === 'debt_payment' || transactionType === 'payment') {
-      let maxDebtToPay = client?.balance < 0 ? Math.abs(client.balance) : 0;
-      if (editingTransactionId) {
-        const oldTx = transactions.find((t) => t.id === editingTransactionId);
-        if (oldTx) {
-          if (oldTx.type === 'payment' || oldTx.type === 'debt_payment') {
-            maxDebtToPay += oldTx.amount;
-          } else if (oldTx.type === 'debt') {
-            maxDebtToPay = Math.max(0, maxDebtToPay - oldTx.amount);
-          }
-        }
-      }
-
-      maxDebtToPay = Math.round(maxDebtToPay * 100) / 100;
-      const roundedAmount = Math.round(parsedAmount * 100) / 100;
-
-      if (maxDebtToPay <= 0) {
-        Alert.alert(
-          'Sin deuda pendiente',
-          `${client?.name || 'El cliente'} no tiene deuda pendiente para abonar.`
-        );
-        return;
-      }
-
-      if (roundedAmount > maxDebtToPay) {
-        Alert.alert(
-          'Monto excede la deuda',
-          `No puedes pagar más de lo que debe el cliente. La deuda actual es de $${formatCurrency(maxDebtToPay)}.`
-        );
-        return;
-      }
-    }
-
     setSaving(true);
     try {
       if (editingTransactionId) {
-        await _editTransaction(parsedAmount);
+        await _editTransaction(parsedAmount, title.trim());
       } else {
-        await _addTransaction(parsedAmount);
+        await _addTransaction(parsedAmount, title.trim());
       }
 
-      syncOutbox(); // Intentar subir a Firebase si hay internet
+      syncOutbox();
       DeviceEventEmitter.emit('local-db-changed');
       showAlert('Transacción guardada exitosamente', 'success');
       closeModal();
@@ -382,15 +399,26 @@ export default function UserDetailsScreen() {
   };
 
   /** Lógica interna: agregar nueva transacción. */
-  const _addTransaction = async (parsedAmount) => {
-    // El servicio encola en outbox y actualiza la caché SQLite
+  const _addTransaction = async (parsedAmount, finalTitle) => {
+    // Capturar balance previo antes de la transacción
+    const prevBalance = client?.balance ?? 0;
+
+    // Construir descripción enriquecida con el balance previo
+    let enrichedDescription = description.trim();
+    if (!editingTransactionId) {
+      const prevMeta = `__prevBalance:${prevBalance}`;
+      enrichedDescription = enrichedDescription
+        ? `${enrichedDescription}\n${prevMeta}`
+        : prevMeta;
+    }
+
     const { txId, balanceChange, newTx } = await addTransaction({
       uid: user.uid,
       clientId: id,
       type: transactionType,
       amount: parsedAmount,
-      title: title.trim(),
-      description: description.trim(),
+      title: finalTitle ?? title.trim(),
+      description: enrichedDescription,
     });
 
     // Actualizar UI optimista
@@ -402,7 +430,7 @@ export default function UserDetailsScreen() {
       let debtChange = 0;
       if (transactionType === 'payment') debtChange = -parsedAmount;
       else if (transactionType === 'debt') debtChange = parsedAmount;
-      else if (transactionType === 'debt_payment') debtChange = -balanceChange; // balanceChange ya fue limitado al máximo de deuda
+      else if (transactionType === 'debt_payment') debtChange = -parsedAmount;
       if (debtChange !== 0) updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) + debtChange });
     }
 
@@ -414,16 +442,18 @@ export default function UserDetailsScreen() {
         clientName: client?.name || 'Sin nombre',
         type: transactionType,
         amount: parsedAmount,
-        title: title.trim(),
-        description: description.trim(),
+        title: finalTitle ?? title.trim(),
+        description: enrichedDescription,
       });
     }
   };
 
   /** Lógica interna: editar transacción existente. */
-  const _editTransaction = async (parsedAmount) => {
+  const _editTransaction = async (parsedAmount, finalTitle) => {
     const oldTx = transactions.find((t) => t.id === editingTransactionId);
     if (!oldTx) throw new Error('Transacción no encontrada');
+
+    const resolvedTitle = finalTitle ?? title.trim();
 
     // El servicio encola en outbox y actualiza la caché SQLite
     const { netBalanceChange, debtDiff } = await editTransaction({
@@ -434,7 +464,7 @@ export default function UserDetailsScreen() {
       oldAmount: oldTx.amount,
       newType: transactionType,
       newAmount: parsedAmount,
-      newTitle: title.trim(),
+      newTitle: resolvedTitle,
       newDescription: description.trim(),
     });
 
@@ -442,7 +472,7 @@ export default function UserDetailsScreen() {
     setTransactions((prev) =>
       prev.map((t) =>
         t.id === editingTransactionId
-          ? { ...t, type: transactionType, amount: parsedAmount, title: title.trim(), description: description.trim() }
+          ? { ...t, type: transactionType, amount: parsedAmount, title: resolvedTitle, description: description.trim() }
           : t
       )
     );
@@ -462,7 +492,7 @@ export default function UserDetailsScreen() {
         oldAmount: oldTx.amount,
         newType: transactionType,
         newAmount: parsedAmount,
-        newTitle: title.trim(),
+        newTitle: resolvedTitle,
         newDescription: description.trim(),
       });
     }
@@ -614,12 +644,20 @@ export default function UserDetailsScreen() {
         ? '#E8F9EE'
         : '#FDECEA';
 
+    const { dateStr, timeStr } = formatIconDateTime(item);
+
     return (
       <TouchableOpacity style={styles.transactionCard} onPress={() => openDetailsModal(item)} activeOpacity={0.7}>
         <View style={styles.transactionIconContainer}>
           <View style={[styles.iconBg, { backgroundColor: iconBgColor }]}>
-            <Ionicons name={iconName} size={26} color={iconColor} />
+            <Ionicons name={iconName} size={24} color={iconColor} />
           </View>
+          {dateStr ? (
+            <Text style={styles.iconDateText} numberOfLines={1}>
+              {dateStr}{timeStr ? <Text style={styles.iconTimeText}> {timeStr}</Text> : null}
+            </Text>
+          ) : null}
+
         </View>
         <View style={styles.transactionInfo}>
           <Text style={styles.transactionDescription}>{item.title || item.description}</Text>
@@ -628,7 +666,6 @@ export default function UserDetailsScreen() {
           ) : item.description && item.description !== item.title && !isInvoice ? (
             <Text style={styles.transactionSubDescription} numberOfLines={1}>{item.description}</Text>
           ) : null}
-          <Text style={styles.transactionDate}>{item.date}</Text>
         </View>
         <View style={styles.transactionRightCol}>
           <Text style={[styles.transactionAmount, isPayment ? styles.positiveBalance : styles.negativeBalance]}>
@@ -710,17 +747,7 @@ export default function UserDetailsScreen() {
           <View style={styles.actionButtons}>
             <TouchableOpacity
               style={[styles.actionButton, styles.paymentButton]}
-              onPress={() => {
-                if (balance >= 0) {
-                  Alert.alert(
-                    'Sin deuda pendiente',
-                    `${client?.name || 'Este usuario'} no tiene deudas pendientes en este momento.`,
-                    [{ text: 'Entendido', style: 'default' }]
-                  );
-                  return;
-                }
-                openModal('debt_payment');
-              }}
+              onPress={() => openModal('debt_payment')}
             >
               <Ionicons name="add-circle-outline" size={20} color="white" />
               <Text style={styles.actionButtonText}>Abono a deuda</Text>
@@ -937,14 +964,29 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   transactionIconContainer: {
-    marginRight: 15,
-  },
-  iconBg: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    marginRight: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    minWidth: 64,
+  },
+  iconBg: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconDateText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#636366',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  iconTimeText: {
+    fontSize: 10,
+    fontWeight: '400',
+    color: '#8E8E93',
   },
   transactionInfo: {
     flex: 1,

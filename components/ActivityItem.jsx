@@ -16,24 +16,7 @@ import {
 import ViewShot from 'react-native-view-shot';
 import ShareTransactionCard from './ShareTransactionCard';
 
-// ─── Helper: relative time in Spanish ───
-function timeAgo(date) {
-  if (!date) return '';
-  const dateObj = date instanceof Date ? date : new Date(date);
-  if (isNaN(dateObj.getTime())) return '';
-  const now = new Date();
-  const diffMs = now - dateObj;
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHr = Math.floor(diffMin / 60);
-  const diffDays = Math.floor(diffHr / 24);
 
-  if (diffSec < 60) return 'Hace un momento';
-  if (diffMin < 60) return `Hace ${diffMin} min`;
-  if (diffHr < 24) return `Hace ${diffHr} hora${diffHr > 1 ? 's' : ''}`;
-  if (diffDays < 7) return `Hace ${diffDays} día${diffDays > 1 ? 's' : ''}`;
-  return dateObj.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
-}
 
 // ─── Helper: fecha formateada completa ───
 function formatTxDate(ts, fallback) {
@@ -48,6 +31,55 @@ function formatTxDate(ts, fallback) {
     minute: '2-digit',
     hour12: true,
   });
+}
+
+/** Formatea fecha y hora separadas para mostrar debajo del icono */
+function formatIconDateTime(item) {
+  if (!item) return { dateStr: '', timeStr: '' };
+
+  let dateObj = null;
+  const rawTs = item.createdAt ?? item._date ?? item._timestamp;
+
+  if (rawTs) {
+    if (typeof rawTs.toDate === 'function') {
+      dateObj = rawTs.toDate();
+    } else if (rawTs instanceof Date) {
+      dateObj = rawTs;
+    } else if (typeof rawTs === 'number') {
+      const d = new Date(rawTs);
+      if (!isNaN(d.getTime())) dateObj = d;
+    } else if (typeof rawTs === 'string') {
+      const d = new Date(rawTs);
+      if (!isNaN(d.getTime())) dateObj = d;
+    }
+  }
+
+  if (dateObj) {
+    const day = dateObj.getDate();
+    const month = dateObj.toLocaleDateString('es-ES', { month: 'short' }).replace('.', '');
+    const time = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return {
+      dateStr: `${day} ${month}`,
+      timeStr: time,
+    };
+  }
+
+  if (typeof item.date === 'string' && item.date) {
+    if (item.date.includes(' a las ')) {
+      const parts = item.date.split(' a las ');
+      const dateWords = parts[0].trim().split(' ');
+      const dateShort = dateWords.length >= 2 ? `${dateWords[0]} ${dateWords[1]}` : parts[0];
+      return {
+        dateStr: dateShort,
+        timeStr: parts[1]?.trim() || '',
+      };
+    }
+    const dateWords = item.date.trim().split(' ');
+    const dateShort = dateWords.length >= 2 ? `${dateWords[0]} ${dateWords[1]}` : item.date;
+    return { dateStr: dateShort, timeStr: '' };
+  }
+
+  return { dateStr: '', timeStr: '' };
 }
 
 const numberFormatter = new Intl.NumberFormat('en-US', {
@@ -176,6 +208,8 @@ export default function ActivityItem({ item }) {
     }
   };
 
+  const { dateStr, timeStr } = formatIconDateTime(item);
+
   return (
     <>
       <TouchableOpacity
@@ -183,8 +217,15 @@ export default function ActivityItem({ item }) {
         activeOpacity={0.65}
         onPress={() => setOptionsModalVisible(true)}
       >
-        <View style={[styles.activityIconBg, { backgroundColor: palette.bg }]}>
-          <Ionicons name={iconName} size={22} color={palette.icon} />
+        <View style={styles.iconColContainer}>
+          <View style={[styles.activityIconBg, { backgroundColor: palette.bg }]}>
+            <Ionicons name={iconName} size={22} color={palette.icon} />
+          </View>
+          {dateStr ? (
+            <Text style={styles.iconDateText} numberOfLines={1}>
+              {dateStr}{timeStr ? <Text style={styles.iconTimeText}> {timeStr}</Text> : null}
+            </Text>
+          ) : null}
         </View>
 
         <View style={styles.activityInfo}>
@@ -198,10 +239,6 @@ export default function ActivityItem({ item }) {
               ? `🛒 ${item.description || item.productName || 'Producto'}`
               : item.description}
           </Text>
-          <View style={styles.timeRow}>
-            <Ionicons name="time-outline" size={11} color="#AEAEB2" />
-            <Text style={styles.activityTime}>{timeAgo(item._date || item.createdAt)}</Text>
-          </View>
         </View>
 
         <View style={styles.amountContainer}>
@@ -499,12 +536,29 @@ const styles = StyleSheet.create({
     width: 3,
     borderRadius: 2,
   },
+  iconColContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 64,
+  },
   activityIconBg: {
-    width: 44,
-    height: 44,
+    width: 42,
+    height: 42,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  iconDateText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#636366',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  iconTimeText: {
+    fontSize: 10,
+    fontWeight: '400',
+    color: '#8E8E93',
   },
   activityInfo: {
     flex: 1,
