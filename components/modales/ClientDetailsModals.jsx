@@ -58,6 +58,7 @@ export default function ClientDetailsModals({
   deleting,
   handleSaveTransaction,
   handleDeleteClient,
+  handleResetHistory,
   handleDeleteTransaction,
   openEditModal,
 }) {
@@ -214,6 +215,7 @@ export default function ClientDetailsModals({
       >
         <TouchableOpacity style={styles.optionsOverlay} activeOpacity={1} onPress={() => setOptionsVisible(false)}>
           <View style={styles.optionsContent}>
+            {/* Editar cliente */}
             <TouchableOpacity
               style={styles.optionItem}
               onPress={() => {
@@ -235,10 +237,31 @@ export default function ClientDetailsModals({
 
             <View style={styles.optionDivider} />
 
-            {/* <TouchableOpacity style={styles.optionItem} onPress={handleDeleteClient}>
+            {/* Resetear historial */}
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={() => {
+                setOptionsVisible(false);
+                if (handleResetHistory) handleResetHistory();
+              }}
+            >
+              <Ionicons name="refresh-circle-outline" size={22} color="#FF9500" />
+              <Text style={[styles.optionText, { color: '#FF9500' }]}>Resetear historial</Text>
+            </TouchableOpacity>
+
+            <View style={styles.optionDivider} />
+
+            {/* Eliminar cliente */}
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={() => {
+                setOptionsVisible(false);
+                if (handleDeleteClient) handleDeleteClient();
+              }}
+            >
               <Ionicons name="trash-outline" size={22} color="#FF3B30" />
               <Text style={[styles.optionText, { color: '#FF3B30' }]}>Eliminar cliente</Text>
-            </TouchableOpacity> */}
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -520,11 +543,11 @@ export default function ClientDetailsModals({
         </View>
       </Modal>
 
-      {/* ── Overlay de eliminando ── */}
+      {/* ── Overlay de eliminando / reseteando ── */}
       {deleting && (
         <View style={styles.deletingOverlay}>
           <ActivityIndicator size="large" color="white" />
-          <Text style={styles.deletingText}>Eliminando cliente...</Text>
+          <Text style={styles.deletingText}>Procesando...</Text>
         </View>
       )}
     </>

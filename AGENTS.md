@@ -7,7 +7,7 @@ Guía integral para agentes de IA que trabajan en el repositorio **LogiPay**. Co
 ## 1. Visión General del Proyecto
 
 **LogiPay** es una aplicación móvil fintech / punto de venta (POS) y gestión de inventario, créditos y cobros para pequeños y medianos comerciantes. Permite operar 100% sin conexión a internet (offline-first) y sincronizar datos en la nube de forma transparente cuando hay conectividad.
-
+- **variables**: simepre pon el nombre de las variables claras y completas.
 - **Framework**: Expo SDK 54 (`~54.0.33`), React Native `0.81.5`, React `19.1.0`.
 - **Arquitectura React Native**: Nueva Arquitectura habilitada (`newArchEnabled: true`) y React Compiler (`reactCompiler: true`).
 - **Enrutamiento**: Expo Router v6 (`app/`, rutas tipadas `typedRoutes: true`).

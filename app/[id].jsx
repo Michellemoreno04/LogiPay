@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -20,15 +20,16 @@ import { useLocalData } from '../context/LocalDataContext';
 import { db as firestore } from '../firebaseConfig/config';
 import {
   addTransaction,
+  deleteClient,
   deleteTransaction,
-  editTransaction
+  editTransaction,
+  resetClientHistory,
 } from '../utils/clientService';
 import {
   getClientById,
   getPendingOutbox,
   getTransactionsByClient,
   insertClient,
-  insertTransaction,
 } from '../utils/database';
 import { syncOutbox } from '../utils/syncEngine';
 
@@ -93,8 +94,6 @@ const formatIconDateTime = (item) => {
   return { dateStr: '', timeStr: '' };
 };
 
-
-
 /** Formatea monto como moneda (ej. $1,234.00). */
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
@@ -103,7 +102,7 @@ const formatCurrency = (amount) =>
 export default function UserDetailsScreen() {
   const { id } = useLocalSearchParams();
   const { user, userData, updateLocalUserData } = useAuth();
-  const { clients: contextClients, addTransactionOptimistic, editTransactionOptimistic, deleteTransactionOptimistic, deleteClientOptimistic } = useLocalData();
+  const { addTransactionOptimistic, editTransactionOptimistic, deleteTransactionOptimistic, deleteClientOptimistic, updateClientBalanceOptimistic } = useLocalData();
   const { showAlert } = useAlert();
 
   // ─── Estado del cliente y transacciones ─────────────────────────────────
@@ -111,7 +110,7 @@ export default function UserDetailsScreen() {
   const [transactions, setTransactions] = useState([]);
   const [loadingClient, setLoadingClient] = useState(true);
 
-  // Recargar datos locales del cliente desde SQLite
+  // ─── Recarga desde SQLite (fuente de verdad) ────────────────────────────
   const reloadClientFromDb = useCallback(async () => {
     if (!user || !id) return;
     const localClient = await getClientById(user.uid, id);
@@ -127,22 +126,18 @@ export default function UserDetailsScreen() {
     })));
   }, [user, id]);
 
-  // Recargar datos cada vez que la pantalla entra en foco (ej. al volver de quick-scan)
+  /** Recarga completa: cliente + transacciones desde SQLite */
+  const reloadAllFromDb = useCallback(async () => {
+    await reloadClientFromDb();
+    await reloadTransactionsFromDb();
+  }, [reloadClientFromDb, reloadTransactionsFromDb]);
+
+  // Recargar datos cada vez que la pantalla entra en foco
   useFocusEffect(
     useCallback(() => {
-      reloadClientFromDb();
-      reloadTransactionsFromDb();
-    }, [reloadClientFromDb, reloadTransactionsFromDb])
+      reloadAllFromDb();
+    }, [reloadAllFromDb])
   );
-
-  // Sincronizar client desde contextClients si cambia en memoria
-  useEffect(() => {
-    if (!id || !contextClients || contextClients.length === 0) return;
-    const found = contextClients.find((c) => c.id === id);
-    if (found) {
-      setClient((prev) => (prev ? { ...prev, ...found } : found));
-    }
-  }, [contextClients, id]);
 
   // ─── Estado del modal de transacción ─────────────────────────────────────
   const [modalVisible, setModalVisible] = useState(false);
@@ -166,9 +161,7 @@ export default function UserDetailsScreen() {
   const [txMenuPosition, setTxMenuPosition] = useState({ x: 0, y: 0 });
 
 
-  // ─── Carga del cliente desde SQLite (fuente de verdad) ───────────────────
-  //  Capa 1: SQLite local (inmediato, funciona sin internet)
-  //  Capa 2: Firebase en background (sincroniza cuando hay internet)
+  // ─── Carga inicial del cliente desde SQLite + listener Firebase ──────────
   useEffect(() => {
     if (!user || !id) return;
     let isMounted = true;
@@ -190,7 +183,6 @@ export default function UserDetailsScreen() {
           { includeMetadataChanges: true },
           async (snap) => {
             if (!isMounted) return;
-            // Si el snapshot viene del caché de Firestore sin conexión, no sobreescribir SQLite
             if (snap.metadata?.fromCache) return;
 
             // Si hay operaciones pendientes en outbox para este cliente, no pisar balance local
@@ -202,21 +194,17 @@ export default function UserDetailsScreen() {
 
             if (snap.exists()) {
               const data = { id: snap.id, ...snap.data() };
-              // Normalizar Firestore Timestamp
               if (data.createdAt?.toMillis) data.createdAt = data.createdAt.toMillis();
-              // Guardar en SQLite
               await insertClient(user.uid, data);
               // Recargar desde SQLite como fuente de verdad
               const updated = await getClientById(user.uid, id);
               if (isMounted && updated) setClient(updated);
             } else if (!localClient) {
-              // No existe en Firebase ni en SQLite
               if (isMounted) setClient(null);
             }
             if (isMounted) setLoadingClient(false);
           },
           (error) => {
-            // Sin internet: ya tenemos datos de SQLite
             console.warn('[id.jsx] Firebase client listener offline:', error.code);
             if (isMounted) setLoadingClient(false);
           }
@@ -237,83 +225,19 @@ export default function UserDetailsScreen() {
   }, [user, id]);
 
 
-  // ─── Carga de transacciones desde SQLite ──────────────────────────────────
+  // ─── Carga de transacciones + listener cambios locales ───────────────────
   useEffect(() => {
     if (!user || !id) return;
-    let isMounted = true;
-    let unsubscribe = null;
 
-    const loadTransactions = async () => {
-      // 1. Cargar desde SQLite inmediatamente
-      const localTxs = await getTransactionsByClient(user.uid, id);
-      if (isMounted) {
-        setTransactions(localTxs.map((tx) => ({
-          ...tx,
-          date: tx.date || formatDate(tx.createdAt),
-        })));
-      }
+    reloadTransactionsFromDb();
 
-      // 2. Sincronizar desde Firebase en background
-      try {
-        const txRef = collection(firestore, 'users', user.uid, 'clients', id, 'transactions');
-        const q = query(txRef, orderBy('createdAt', 'desc'));
-        unsubscribe = onSnapshot(
-          q,
-          { includeMetadataChanges: true },
-          async (snapshot) => {
-            if (!isMounted) return;
-            if (snapshot.metadata?.fromCache) return;
-
-            // Guardar en SQLite (INSERT OR REPLACE no duplica)
-            for (const docSnap of snapshot.docs) {
-              const data = docSnap.data();
-              await insertTransaction(user.uid, {
-                id: docSnap.id,
-                clientId: id,
-                type: data.type,
-                amount: data.amount,
-                title: data.title || data.description || '',
-                description: data.description || '',
-                date: data.createdAt?.toDate
-                  ? formatDate(data.createdAt)
-                  : (data.date || ''),
-                createdAt: data.createdAt?.toMillis?.() || Date.now(),
-              });
-            }
-            // Recargar desde SQLite
-            const updated = await getTransactionsByClient(user.uid, id);
-            if (isMounted) {
-              setTransactions(updated.map((tx) => ({
-                ...tx,
-                date: tx.date || formatDate(tx.createdAt),
-              })));
-            }
-          },
-          (error) => {
-            console.warn('[id.jsx] Firebase transactions listener offline:', error.code);
-          }
-        );
-      } catch (e) {
-        console.warn('[id.jsx] Firebase transactions listener error:', e);
-      }
-    };
-
-    loadTransactions();
-
-    const handleLocalDbChanged = () => {
-      reloadClientFromDb();
-      loadTransactions();
-    };
-
-    // Escuchar cambios locales para refrescar cliente y transacciones
+    const handleLocalDbChanged = () => reloadAllFromDb();
     const sub = DeviceEventEmitter.addListener('local-db-changed', handleLocalDbChanged);
 
     return () => {
-      isMounted = false;
-      if (unsubscribe) unsubscribe();
       sub.remove();
     };
-  }, [user, id, reloadClientFromDb]);
+  }, [user, id, reloadTransactionsFromDb, reloadAllFromDb]);
 
 
   // ─── Abrir modal (nueva transacción) ───────────────────────────────────────
@@ -400,30 +324,25 @@ export default function UserDetailsScreen() {
 
   /** Lógica interna: agregar nueva transacción. */
   const _addTransaction = async (parsedAmount, finalTitle) => {
-    // Capturar balance previo antes de la transacción
-    const prevBalance = client?.balance ?? 0;
-
-    // Construir descripción enriquecida con el balance previo
-    let enrichedDescription = description.trim();
-    if (!editingTransactionId) {
-      const prevMeta = `__prevBalance:${prevBalance}`;
-      enrichedDescription = enrichedDescription
-        ? `${enrichedDescription}\n${prevMeta}`
-        : prevMeta;
-    }
-
-    const { txId, balanceChange, newTx } = await addTransaction({
+    const { txId, newTx } = await addTransaction({
       uid: user.uid,
       clientId: id,
       type: transactionType,
       amount: parsedAmount,
       title: finalTitle ?? title.trim(),
-      description: enrichedDescription,
+      description: description.trim(),
     });
 
-    // Actualizar UI optimista
-    setTransactions((prev) => [newTx, ...prev]);
-    setClient((prev) => prev ? { ...prev, balance: (prev.balance || 0) + balanceChange } : prev);
+    // Recargar balance real desde SQLite (recalcClientBalance ya lo calculó)
+    await reloadAllFromDb();
+
+    // Actualizar balance en el contexto global de forma optimista (card de Deudas Pendientes)
+    const updatedClient = await import('../utils/database').then(({ getClientById }) =>
+      getClientById(user.uid, id)
+    );
+    if (updatedClient && updateClientBalanceOptimistic) {
+      updateClientBalanceOptimistic(id, updatedClient.balance);
+    }
 
     // Actualizar totales locales en memoria
     if (updateLocalUserData) {
@@ -434,7 +353,7 @@ export default function UserDetailsScreen() {
       if (debtChange !== 0) updateLocalUserData({ totalDebt: (userData?.totalDebt || 0) + debtChange });
     }
 
-    // Reflejar en contexto global
+    // Reflejar en contexto global (solo actividad reciente, sin tocar balance)
     if (addTransactionOptimistic) {
       await addTransactionOptimistic({
         txId,
@@ -443,7 +362,7 @@ export default function UserDetailsScreen() {
         type: transactionType,
         amount: parsedAmount,
         title: finalTitle ?? title.trim(),
-        description: enrichedDescription,
+        description: description.trim(),
       });
     }
   };
@@ -455,8 +374,7 @@ export default function UserDetailsScreen() {
 
     const resolvedTitle = finalTitle ?? title.trim();
 
-    // El servicio encola en outbox y actualiza la caché SQLite
-    const { netBalanceChange, debtDiff } = await editTransaction({
+    const { debtDiff } = await editTransaction({
       uid: user.uid,
       clientId: id,
       txId: editingTransactionId,
@@ -468,15 +386,16 @@ export default function UserDetailsScreen() {
       newDescription: description.trim(),
     });
 
-    // Actualizar UI optimista
-    setTransactions((prev) =>
-      prev.map((t) =>
-        t.id === editingTransactionId
-          ? { ...t, type: transactionType, amount: parsedAmount, title: resolvedTitle, description: description.trim() }
-          : t
-      )
+    // Recargar balance real desde SQLite (recalcClientBalance ya lo calculó)
+    await reloadAllFromDb();
+
+    // Actualizar balance en el contexto global de forma optimista (card de Deudas Pendientes)
+    const updatedClient = await import('../utils/database').then(({ getClientById }) =>
+      getClientById(user.uid, id)
     );
-    setClient((prev) => prev ? { ...prev, balance: (prev.balance || 0) + netBalanceChange } : prev);
+    if (updatedClient && updateClientBalanceOptimistic) {
+      updateClientBalanceOptimistic(id, updatedClient.balance);
+    }
 
     // Actualizar totales locales en memoria
     if (updateLocalUserData) {
@@ -515,8 +434,7 @@ export default function UserDetailsScreen() {
               const oldTx = transactions.find((t) => t.id === txIdToDel);
               if (!oldTx) return;
 
-              // El servicio encola en outbox y actualiza la caché SQLite
-              const { balanceChange, debtDiff } = await deleteTransaction({
+              const { debtDiff } = await deleteTransaction({
                 uid: user.uid,
                 clientId: id,
                 txId: txIdToDel,
@@ -524,9 +442,16 @@ export default function UserDetailsScreen() {
                 amount: oldTx.amount,
               });
 
-              // Actualizar UI optimista
-              setTransactions((prev) => prev.filter((t) => t.id !== txIdToDel));
-              setClient((prev) => prev ? { ...prev, balance: (prev.balance || 0) + balanceChange } : prev);
+              // Recargar balance real desde SQLite
+              await reloadAllFromDb();
+
+              // Actualizar balance en el contexto global de forma optimista (card de Deudas Pendientes)
+              const updatedClient = await import('../utils/database').then(({ getClientById }) =>
+                getClientById(user.uid, id)
+              );
+              if (updatedClient && updateClientBalanceOptimistic) {
+                updateClientBalanceOptimistic(id, updatedClient.balance);
+              }
 
               // Actualizar totales locales en memoria
               if (updateLocalUserData) {
@@ -556,54 +481,101 @@ export default function UserDetailsScreen() {
 
 
   // ─── Eliminar cliente ─────────────────────────────────────────────────────
-  // const handleDeleteClient = async () => {
-  //   Alert.alert(
-  //     'Eliminar Cliente',
-  //     '¿Estás seguro de que deseas eliminar a este cliente? Esta acción no se puede deshacer y se borrarán todas sus transacciones.',
-  //     [
-  //       { text: 'Cancelar', style: 'cancel' },
-  //       {
-  //         text: 'Eliminar',
-  //         style: 'destructive',
-  //         onPress: async () => {
-  //           setDeleting(true);
-  //           setOptionsVisible(false);
-  //           try {
-  //             // El servicio encola en outbox, revierte totales y actualiza caché
-  //             const { totalDebtReverted } = await deleteClient({
-  //               uid: user.uid,
-  //               clientId: id,
-  //               transactions,
-  //             });
+  const handleDeleteClient = () => {
+    Alert.alert(
+      'Eliminar Cliente',
+      '¿Estás seguro de que deseas eliminar a este cliente? Esta acción no se puede deshacer y se borrarán todas sus transacciones.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            setOptionsVisible(false);
+            try {
+              const { totalDebtReverted } = await deleteClient({
+                uid: user.uid,
+                clientId: id,
+                transactions,
+              });
 
-  //             // Actualizar totales locales en memoria
-  //             if (updateLocalUserData) {
-  //               updateLocalUserData({
-  //                 totalDebt: (userData?.totalDebt || 0) - totalDebtReverted,
-  //               });
-  //             }
+              if (updateLocalUserData) {
+                updateLocalUserData({
+                  totalDebt: (userData?.totalDebt || 0) - totalDebtReverted,
+                });
+              }
 
-  //             // Reflejar en contexto global
-  //             if (deleteClientOptimistic) {
-  //               await deleteClientOptimistic(id);
-  //             }
+              if (deleteClientOptimistic) {
+                await deleteClientOptimistic(id);
+              }
 
-  //             syncOutbox();
-  //             DeviceEventEmitter.emit('local-db-changed');
-  //             router.back();
-  //             showAlert('Cliente eliminado correctamente.', 'success');
-  //           } catch (error) {
-  //             console.error('[id.jsx] handleDeleteClient:', error);
-  //             showAlert('No se pudo eliminar el cliente.', 'error');
-  //           } finally {
-  //             setDeleting(false);
-  //           }
-  //         },
-  //       },
-  //     ]
-  //   );
-  // };
+              syncOutbox();
+              DeviceEventEmitter.emit('local-db-changed');
+              router.back();
+              showAlert('Cliente eliminado correctamente.', 'success');
+            } catch (error) {
+              console.error('[id.jsx] handleDeleteClient:', error);
+              showAlert('No se pudo eliminar el cliente.', 'error');
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
+
+  // ─── Resetear historial de transacciones ──────────────────────────────────
+  const handleResetHistory = () => {
+    Alert.alert(
+      'Resetear Historial',
+      '¿Estás seguro? Se eliminarán TODAS las transacciones de este cliente y su deuda se pondrá en $0.00. Esta acción no se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Resetear',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            setOptionsVisible(false);
+            try {
+              const { totalDebtReverted } = await resetClientHistory({
+                uid: user.uid,
+                clientId: id,
+                transactions,
+              });
+
+              if (updateLocalUserData && totalDebtReverted !== 0) {
+                updateLocalUserData({
+                  totalDebt: (userData?.totalDebt || 0) - totalDebtReverted,
+                });
+              }
+
+              // Actualizar balance a 0 en el contexto global de forma optimista
+              // (la card de Deudas Pendientes se actualiza de inmediato al limpiar historial)
+              if (updateClientBalanceOptimistic) {
+                updateClientBalanceOptimistic(id, 0);
+              }
+
+              // Recargar datos limpios desde SQLite
+              await reloadAllFromDb();
+
+              syncOutbox();
+              DeviceEventEmitter.emit('local-db-changed');
+              showAlert('Historial reseteado correctamente. El cliente queda en $0.00', 'success');
+            } catch (error) {
+              console.error('[id.jsx] handleResetHistory:', error);
+              showAlert('No se pudo resetear el historial.', 'error');
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
 
   // ─── Renderer de fila de transacción ─────────────────────────────────────
@@ -802,7 +774,8 @@ export default function UserDetailsScreen() {
           saving={saving}
           deleting={deleting}
           handleSaveTransaction={handleSaveTransaction}
-          //handleDeleteClient={handleDeleteClient}
+          handleDeleteClient={handleDeleteClient}
+          handleResetHistory={handleResetHistory}
           handleDeleteTransaction={handleDeleteTransaction}
           openEditModal={openEditModal}
         />
@@ -1001,15 +974,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8E8E93',
     marginBottom: 2,
-  },
-  transactionDate: {
-    fontSize: 12,
-    color: '#AEAEB2',
-    marginBottom: 2,
-  },
-  transactionClient: {
-    fontSize: 12,
-    color: '#AEAEB2',
   },
   transactionRightCol: {
     alignItems: 'flex-end',

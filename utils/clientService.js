@@ -10,7 +10,7 @@ import {
   recalcClientBalance,
   updateClient,
   updateTransaction,
-  updateUserDataField
+  updateUserDataField,
 } from './database';
 
 const formatServiceDate = (date) => {
@@ -35,14 +35,12 @@ export const createClient = async ({
   transactionType,
   balanceDescription,
 }) => {
-  // Generar IDs usando referencias de Firestore (sin escribir nada todavía)
   const clientsRef = collection(db, 'users', uid, 'clients');
   const clientId = doc(clientsRef).id;
 
   const balance = transactionType === 'payment' ? parsedBalance : -parsedBalance;
   const now = Date.now();
 
-  // 1. Guardar cliente en SQLite
   await insertClient(uid, {
     id: clientId,
     name,
@@ -52,7 +50,6 @@ export const createClient = async ({
     createdAt: now,
   });
 
-  // 2. Encolar creación en Firebase (outbox)
   await addToOutbox(`users/${uid}/clients`, clientId, {
     name,
     phone,
@@ -63,13 +60,11 @@ export const createClient = async ({
 
   let initialTxId = null;
 
-  // 3. Si hay saldo inicial, crear la transacción
   if (parsedBalance > 0) {
     const txRef = collection(db, 'users', uid, 'clients', clientId, 'transactions');
     initialTxId = doc(txRef).id;
     const date = formatServiceDate(new Date());
 
-    // Guardar transacción en SQLite
     await insertTransaction(uid, {
       id: initialTxId,
       clientId,
@@ -81,11 +76,9 @@ export const createClient = async ({
       createdAt: now,
     });
 
-    // Actualizar totales del usuario en SQLite
     const initialDebtChange = transactionType === 'payment' ? -parsedBalance : parsedBalance;
     await updateUserDataField(uid, 'totalDebt', initialDebtChange);
 
-    // Encolar transacción en outbox
     await addToOutbox(
       `users/${uid}/clients/${clientId}/transactions`,
       initialTxId,
@@ -99,7 +92,6 @@ export const createClient = async ({
       'set'
     );
 
-    // Encolar actualización de totales
     await addToOutbox('users', uid, {
       totalDebt: `INCREMENT_${initialDebtChange}`,
     }, 'update');
@@ -112,10 +104,7 @@ export const createClient = async ({
  * Edita un cliente existente en SQLite y encola en outbox.
  */
 export const editClient = async ({ uid, clientId, name, phone, email }) => {
-  // 1. Actualizar en SQLite
   await updateClient(uid, clientId, { name, phone, email });
-
-  // 2. Encolar en outbox
   await addToOutbox(`users/${uid}/clients`, clientId, { name, phone, email }, 'update');
 };
 
@@ -125,25 +114,20 @@ export const editClient = async ({ uid, clientId, name, phone, email }) => {
 /**
  * Agrega una nueva transacción:
  * 1. Guarda en SQLite
- * 2. Encola en outbox para Firebase
+ * 2. Recalcula balance desde cero (evita race conditions)
+ * 3. Encola en outbox para Firebase
  */
 export const addTransaction = async ({ uid, clientId, type, amount, title, description, createdAt }) => {
   const txRef = collection(db, 'users', uid, 'clients', clientId, 'transactions');
   const txId = doc(txRef).id;
 
-  // 'debt_payment': abona a la deuda del cliente (balance sube hacia 0, nunca positivo).
-  // Solo reduce la deuda acumulada, no crea saldo a favor.
-  // 'payment': pago normal (saldo positivo, modo comercial).
-  // 'debt': agrega deuda al cliente.
   let balanceChange;
   let debtChange;
 
   if (type === 'recurring_payment') {
-    // Pago de cuota mensual: solo se registra como evento, NO toca balance ni deuda.
     balanceChange = 0;
     debtChange = 0;
   } else if (type === 'debt_payment') {
-    // Abono a deuda: puede cancelar la deuda y generar saldo a favor si el monto supera la deuda
     balanceChange = amount;
     debtChange = -amount;
   } else if (type === 'payment') {
@@ -170,8 +154,7 @@ export const addTransaction = async ({ uid, clientId, type, amount, title, descr
     createdAt: now,
   });
 
-  // 2. Recalcular balance desde cero (fuente de verdad: suma de transacciones).
-  //    Esto evita race conditions con lecturas/escrituras incrementales.
+  // 2. Recalcular balance desde cero — fuente de verdad: suma de transacciones
   const newBalance = await recalcClientBalance(uid, clientId);
 
   // 3. Actualizar totales del usuario en SQLite
@@ -184,7 +167,6 @@ export const addTransaction = async ({ uid, clientId, type, amount, title, descr
     { type, amount, title, description, createdAt: 'SERVER_TIMESTAMP' },
     'set'
   );
-  // Sincronizar el balance calculado (no incremental) a Firebase
   await addToOutbox(`users/${uid}/clients`, clientId, { balance: newBalance }, 'update');
   if (debtChange !== 0) {
     await addToOutbox('users', uid, { totalDebt: `INCREMENT_${debtChange}` }, 'update');
@@ -208,7 +190,8 @@ export const addTransaction = async ({ uid, clientId, type, amount, title, descr
 /**
  * Edita una transacción existente:
  * 1. Actualiza en SQLite
- * 2. Encola en outbox para Firebase
+ * 2. Recalcula balance desde cero
+ * 3. Encola en outbox para Firebase
  */
 export const editTransaction = async ({
   uid,
@@ -224,13 +207,14 @@ export const editTransaction = async ({
   const isPay = (t) => t === 'payment' || t === 'debt_payment';
   const isRec = (t) => t === 'recurring_payment';
 
-  const oldBalanceChange = isRec(oldType) ? 0 : isPay(oldType) ? -oldAmount : oldAmount;
-  const newBalanceChange = isRec(newType) ? 0 : isPay(newType) ? newAmount : -newAmount;
-  const netBalanceChange = oldBalanceChange + newBalanceChange;
-
   const oldDebtDiff = isRec(oldType) ? 0 : oldType === 'debt' ? oldAmount : -oldAmount;
   const newDebtDiff = isRec(newType) ? 0 : newType === 'debt' ? newAmount : -newAmount;
   const debtDiff = newDebtDiff - oldDebtDiff;
+
+  // Calcular netBalanceChange para compatibilidad con llamadores
+  const oldBalanceChange = isRec(oldType) ? 0 : isPay(oldType) ? -oldAmount : oldAmount;
+  const newBalanceChange = isRec(newType) ? 0 : isPay(newType) ? newAmount : -newAmount;
+  const netBalanceChange = oldBalanceChange + newBalanceChange;
 
   // 1. Actualizar transacción en SQLite
   await updateTransaction(uid, txId, {
@@ -240,8 +224,7 @@ export const editTransaction = async ({
     description: newDescription || '',
   });
 
-  // 2. Recalcular balance desde cero (fuente de verdad: suma de transacciones).
-  //    Esto evita errores con la lógica especial de debt_payment y race conditions.
+  // 2. Recalcular balance desde cero
   const newBalance = await recalcClientBalance(uid, clientId);
 
   // 3. Actualizar totales del usuario en SQLite
@@ -254,7 +237,6 @@ export const editTransaction = async ({
     { type: newType, amount: newAmount, title: newTitle, description: newDescription },
     'update'
   );
-  // Sincronizar el balance calculado (no incremental) a Firebase
   await addToOutbox(`users/${uid}/clients`, clientId, { balance: newBalance }, 'update');
   if (debtDiff !== 0) {
     await addToOutbox('users', uid, { totalDebt: `INCREMENT_${debtDiff}` }, 'update');
@@ -267,7 +249,8 @@ export const editTransaction = async ({
 /**
  * Elimina una transacción:
  * 1. Elimina de SQLite
- * 2. Encola en outbox para Firebase
+ * 2. Recalcula balance desde cero
+ * 3. Encola en outbox para Firebase
  */
 export const deleteTransaction = async ({ uid, clientId, txId, type, amount }) => {
   const isPay = type === 'payment' || type === 'debt_payment';
@@ -279,8 +262,7 @@ export const deleteTransaction = async ({ uid, clientId, txId, type, amount }) =
   // 1. Eliminar transacción de SQLite
   await deleteTransactionDB(uid, txId);
 
-  // 2. Recalcular balance desde cero (fuente de verdad: suma de transacciones).
-  //    Al borrar primero y recalcular después, el resultado siempre es correcto.
+  // 2. Recalcular balance desde cero
   const newBalance = await recalcClientBalance(uid, clientId);
 
   // 3. Actualizar totales del usuario en SQLite
@@ -288,13 +270,57 @@ export const deleteTransaction = async ({ uid, clientId, txId, type, amount }) =
 
   // 4. Encolar en outbox
   await addToOutbox(`users/${uid}/clients/${clientId}/transactions`, txId, null, 'delete');
-  // Sincronizar el balance calculado (no incremental) a Firebase
   await addToOutbox(`users/${uid}/clients`, clientId, { balance: newBalance }, 'update');
   if (debtDiff !== 0) {
     await addToOutbox('users', uid, { totalDebt: `INCREMENT_${debtDiff}` }, 'update');
   }
 
   return { balanceChange, debtDiff };
+};
+
+
+/**
+ * Resetea el historial de un cliente:
+ * Elimina TODAS sus transacciones, pone el balance en $0.
+ * El cliente se mantiene en la lista.
+ */
+export const resetClientHistory = async ({ uid, clientId, transactions }) => {
+  let totalDebtReverted = 0;
+
+  for (const tx of transactions) {
+    // Calcular cuánto de deuda acumulada revierte esta transacción
+    if (tx.type === 'debt') totalDebtReverted += tx.amount;
+    else if (tx.type === 'payment' || tx.type === 'debt_payment') totalDebtReverted -= tx.amount;
+
+    // Eliminar cada transacción de SQLite
+    await deleteTransactionDB(uid, tx.id);
+
+    // Encolar eliminación en Firebase
+    await addToOutbox(
+      `users/${uid}/clients/${clientId}/transactions`,
+      tx.id,
+      null,
+      'delete'
+    );
+  }
+
+  // Recalcular balance (debe quedar en 0 tras borrar todo)
+  const newBalance = await recalcClientBalance(uid, clientId);
+
+  // Revertir totales globales del usuario en SQLite
+  if (totalDebtReverted !== 0) {
+    await updateUserDataField(uid, 'totalDebt', -totalDebtReverted);
+  }
+
+  // Sincronizar balance=0 a Firebase
+  await addToOutbox(`users/${uid}/clients`, clientId, { balance: newBalance }, 'update');
+  if (totalDebtReverted !== 0) {
+    await addToOutbox('users', uid, {
+      totalDebt: `INCREMENT_${-totalDebtReverted}`,
+    }, 'update');
+  }
+
+  return { totalDebtReverted, newBalance };
 };
 
 
@@ -306,20 +332,16 @@ export const deleteTransaction = async ({ uid, clientId, txId, type, amount }) =
 export const deleteClient = async ({ uid, clientId, transactions }) => {
   let totalDebtReverted = 0;
 
-  // Calcular totales a revertir y encolar eliminación de cada transacción
   for (const tx of transactions) {
     if (tx.type === 'debt') totalDebtReverted += tx.amount;
-    else if (tx.type === 'payment') totalDebtReverted -= tx.amount;
+    else if (tx.type === 'payment' || tx.type === 'debt_payment') totalDebtReverted -= tx.amount;
     addToOutbox(`users/${uid}/clients/${clientId}/transactions`, tx.id, null, 'delete');
   }
 
-  // Revertir totales globales del usuario en SQLite
   if (totalDebtReverted !== 0) await updateUserDataField(uid, 'totalDebt', -totalDebtReverted);
 
-  // Eliminar cliente y sus transacciones de SQLite (la función borra en cascada)
   await deleteClientDB(uid, clientId);
 
-  // Encolar en outbox
   if (totalDebtReverted !== 0) {
     await addToOutbox('users', uid, {
       totalDebt: `INCREMENT_${-totalDebtReverted}`,
@@ -329,4 +351,3 @@ export const deleteClient = async ({ uid, clientId, transactions }) => {
 
   return { totalDebtReverted };
 };
-

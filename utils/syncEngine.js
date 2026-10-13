@@ -1,4 +1,4 @@
-import { collection, doc, setDoc, addDoc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, setDoc, addDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 import * as Network from 'expo-network';
 import { db } from '../firebaseConfig/config';
 import { getPendingOutbox, updateOutboxStatus, deleteFromOutbox, setCache } from './database';
@@ -53,8 +53,10 @@ export const syncOutbox = async () => {
             await addDoc(colRef, data);
             break;
           case 'update':
+            // Usamos setDoc con merge:true en vez de updateDoc para evitar el error
+            // "No document to update" cuando el documento aún no existe en Firestore.
             docRef = doc(db, item.collection, item.docId);
-            await updateDoc(docRef, data);
+            await setDoc(docRef, data, { merge: true });
             break;
           case 'delete':
             docRef = doc(db, item.collection, item.docId);

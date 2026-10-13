@@ -293,7 +293,20 @@ export function LocalDataProvider({ children }) {
   }, []);
 
   /**
+   * Actualiza el balance de un cliente localmente (en memoria).
+   * Se usa después de agregar/editar/eliminar transacciones o resetear historial
+   * para que la card de Deudas Pendientes refleje el nuevo balance de inmediato.
+   */
+  const updateClientBalanceOptimistic = useCallback((clientId, newBalance) => {
+    setClientsState((prev) =>
+      prev.map((c) => c.id === clientId ? { ...c, balance: newBalance } : c)
+    );
+  }, []);
+
+  /**
    * Agrega una transacción localmente (en memoria).
+   * SOLO actualiza la actividad reciente en el feed de inicio.
+   * El balance del cliente se recarga desde SQLite en [id].jsx.
    */
   const addTransactionOptimistic = useCallback(async ({
     txId, clientId, clientName, type, amount, title, description, rawDescription, createdAt,
@@ -315,16 +328,6 @@ export function LocalDataProvider({ children }) {
       _date: new Date(now),
     };
 
-    // Actualizar balance del cliente en memoria si hay cliente
-    if (clientId && clientId !== 'global') {
-      const balanceChange = (type === 'payment' || type === 'debt_payment') ? amount : (type === 'recurring_payment' ? 0 : -amount);
-      if (balanceChange !== 0) {
-        setClientsState((prev) =>
-          prev.map((c) => c.id === clientId ? { ...c, balance: (c.balance || 0) + balanceChange } : c)
-        );
-      }
-    }
-
     pendingOpsRef.current.addedTxs[newTx.id] = newTx;
     setRecentActivityState((prev) => [newTx, ...prev.filter((t) => t.id !== newTx.id)].slice(0, 8));
 
@@ -333,22 +336,12 @@ export function LocalDataProvider({ children }) {
 
   /**
    * Edita una transacción localmente (en memoria).
+   * SOLO actualiza la actividad reciente en el feed de inicio.
+   * El balance del cliente se recarga desde SQLite en [id].jsx.
    */
   const editTransactionOptimistic = useCallback(async ({
     txId, clientId, oldType, oldAmount, newType, newAmount, newTitle, newDescription,
   }) => {
-    const isPay = (t) => t === 'payment' || t === 'debt_payment';
-    const isRec = (t) => t === 'recurring_payment';
-    const oldBalanceChange = isRec(oldType) ? 0 : isPay(oldType) ? -oldAmount : oldAmount;
-    const newBalanceChange = isRec(newType) ? 0 : isPay(newType) ? newAmount : -newAmount;
-    const netChange = oldBalanceChange + newBalanceChange;
-
-    if (netChange !== 0) {
-      setClientsState((prev) =>
-        prev.map((c) => c.id === clientId ? { ...c, balance: (c.balance || 0) + netChange } : c)
-      );
-    }
-
     const updatedTx = { id: txId, type: newType, amount: newAmount, title: newTitle, description: newDescription };
     pendingOpsRef.current.updatedTxs[txId] = updatedTx;
 
@@ -359,17 +352,10 @@ export function LocalDataProvider({ children }) {
 
   /**
    * Elimina una transacción localmente (en memoria).
+   * SOLO actualiza la actividad reciente en el feed de inicio.
+   * El balance del cliente se recarga desde SQLite en [id].jsx.
    */
   const deleteTransactionOptimistic = useCallback(async ({ txId, clientId, type, amount }) => {
-    const isPay = type === 'payment' || type === 'debt_payment';
-    const isRec = type === 'recurring_payment';
-    const balanceChange = isRec ? 0 : isPay ? -amount : amount;
-    if (balanceChange !== 0) {
-      setClientsState((prev) =>
-        prev.map((c) => c.id === clientId ? { ...c, balance: (c.balance || 0) + balanceChange } : c)
-      );
-    }
-
     pendingOpsRef.current.deletedTxIds.add(txId);
     setRecentActivityState((prev) => prev.filter((tx) => tx.id !== txId));
   }, []);
@@ -480,6 +466,7 @@ export function LocalDataProvider({ children }) {
     // Acciones optimistas – clientes
     addClientOptimistic,
     editClientOptimistic,
+    updateClientBalanceOptimistic,
     addTransactionOptimistic,
     editTransactionOptimistic,
     deleteTransactionOptimistic,

@@ -19,7 +19,7 @@ import { createClient, editClient } from '../utils/clientService';
 import { syncOutbox } from '../utils/syncEngine';
 
 export default function AddUserScreen() {
-  const { user, userData, updateLocalUserData } = useAuth();
+  const { user } = useAuth();
   const { addClientOptimistic, editClientOptimistic } = useLocalData();
   const { showAlert } = useAlert();
 
@@ -30,9 +30,6 @@ export default function AddUserScreen() {
   const [name, setName] = useState(params.name || '');
   const [phone, setPhone] = useState(params.phone || '');
   const [email, setEmail] = useState(params.email || '');
-  const [initialBalance, setInitialBalance] = useState('');
-  const transactionType = 'debt'; // Solo se registran deudas al crear un cliente
-  const [balanceDescription, setBalanceDescription] = useState('Saldo inicial');
 
   const handleSave = async () => {
     if (!user) {
@@ -65,39 +62,29 @@ export default function AddUserScreen() {
         return;
       }
 
-      const parsedBalance = parseFloat(initialBalance.replace(/,/g, '')) || 0;
-
-      // Toda la lógica de negocio queda en el servicio
-      const { clientId, initialTxId, balance } = await createClient({
+      // Crear cliente sin saldo inicial
+      const { clientId } = await createClient({
         uid: user.uid,
         name,
         phone,
         email,
-        parsedBalance,
-        transactionType,
-        balanceDescription: balanceDescription.trim() || 'Saldo inicial',
+        parsedBalance: 0,
+        transactionType: 'debt',
+        balanceDescription: '',
       });
 
-      // Actualizar totales locales del usuario en memoria
-      if (parsedBalance > 0 && updateLocalUserData) {
-        const debtChange = transactionType === 'payment' ? -parsedBalance : parsedBalance;
-        updateLocalUserData({
-          totalDebt: (userData?.totalDebt || 0) + debtChange,
-        });
-      }
-
-      // Actualizar contexto local (lista global + actividad reciente)
+      // Actualizar contexto local (lista global)
       if (addClientOptimistic) {
         await addClientOptimistic({
           clientId,
-          txId: initialTxId,
+          txId: null,
           name,
           phone,
           email,
-          balance,
-          transactionType,
-          parsedBalance,
-          balanceDescription: balanceDescription.trim() || 'Saldo inicial',
+          balance: 0,
+          transactionType: 'debt',
+          parsedBalance: 0,
+          balanceDescription: '',
         });
       }
 
@@ -113,11 +100,7 @@ export default function AddUserScreen() {
     }
   };
 
-  const formatNumber = (value) => {
-    const cleaned = value.replace(/[^0-9]/g, '');
-    if (!cleaned) return '';
-    return new Intl.NumberFormat('en-US').format(Number(cleaned));
-  };
+
 
   return (
     <KeyboardAvoidingView
@@ -154,35 +137,7 @@ export default function AddUserScreen() {
           />
         </View>
 
-        {!isEditing && (
-          <>
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Deuda Inicial</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Ej. 0.00"
-                placeholderTextColor="#8E8E93"
-                value={initialBalance}
-                onChangeText={(text) => setInitialBalance(formatNumber(text))}
-                keyboardType="decimal-pad"
-              />
-            </View>
 
-            {initialBalance ? (
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Concepto del Saldo Inicial</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ej. Primer Saldo, pago numero 1..."
-                  placeholderTextColor="#8E8E93"
-                  value={balanceDescription}
-                  onChangeText={setBalanceDescription}
-                  autoCapitalize="sentences"
-                />
-              </View>
-            ) : null}
-          </>
-        )}
 
         <View style={styles.formGroup}>
           <Text style={styles.label}>Correo Electrónico</Text>
@@ -254,36 +209,5 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  typeSelector: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
-  typeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
-  },
-  typeButtonActivePayment: {
-    backgroundColor: '#34C759',
-  },
-  typeButtonActiveDebt: {
-    backgroundColor: '#FF3B30',
-  },
-  typeButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#8E8E93',
-    marginLeft: 6,
-  },
-  typeButtonTextActive: {
-    color: 'white',
   },
 });

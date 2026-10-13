@@ -2,7 +2,7 @@ export default {
   "expo": {
     "name": "LogiPay",
     "slug": "LogiPay",
-    "version": "2.0.0",
+    "version": "2.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/ios-app-icon.png",
     "scheme": "logipay",
